@@ -1,0 +1,397 @@
+import React from 'react';
+import { SLRTRecord } from '../types';
+import { Printer, Calendar, FileText, Clipboard, Check, HelpCircle, ShieldCheck, HeartPulse, Camera, Clock, CheckCircle2, UserCheck } from 'lucide-react';
+
+interface BentoRecordDetailsProps {
+  rec: SLRTRecord;
+  onPrint: () => void;
+  onCopyFormatList: () => void;
+  copiedRecordId: 'list' | 'tbl' | null;
+  listText: string;
+  userRole?: 'admin' | 'facilitator' | 'warga';
+  onVerifyVisit?: (rec: SLRTRecord) => void;
+}
+
+export default function BentoRecordDetails({
+  rec,
+  onPrint,
+  onCopyFormatList,
+  copiedRecordId,
+  listText,
+  userRole = 'admin',
+  onVerifyVisit
+}: BentoRecordDetailsProps) {
+  
+  // Custom helper for status coloring
+  const getStatusStyle = (status: string) => {
+    const s = status.toLowerCase();
+    if (s.includes('sangat')) {
+      return {
+        bg: 'bg-rose-50 border-rose-100 text-rose-700',
+        dot: 'bg-rose-500',
+        badge: 'bg-rose-600 text-white'
+      };
+    }
+    if (s.includes('rentan')) {
+      return {
+        bg: 'bg-amber-50 border-amber-100 text-amber-800',
+        dot: 'bg-amber-500',
+        badge: 'bg-amber-500 text-white'
+      };
+    }
+    if (s.includes('miskin')) {
+      return {
+        bg: 'bg-orange-50 border-orange-100 text-orange-700',
+        dot: 'bg-orange-500',
+        badge: 'bg-orange-600 text-white'
+      };
+    }
+    return {
+      bg: 'bg-emerald-50 border-emerald-100 text-emerald-800',
+      dot: 'bg-emerald-500',
+      badge: 'bg-emerald-600 text-white'
+    };
+  };
+
+  const statusStyle = getStatusStyle(rec.status);
+
+  // Split documents string into badges
+  const docList = rec.dokumen
+    .split(',')
+    .map(doc => doc.trim())
+    .filter(doc => doc.length > 0);
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 auto-rows-auto">
+      
+      {/* CARD 1: PROFILE BLOCK (2 Column Space) */}
+      <div id="bento-profile" className="col-span-1 md:col-span-2 bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-5 relative overflow-hidden">
+        <div className="absolute right-0 top-0 w-24 h-24 bg-indigo-50/30 rounded-bl-full pointer-events-none" />
+        <div className="w-16 h-16 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center text-3xl shadow-inner select-none shrink-0 scale-100 hover:scale-105 transition-all">
+          👤
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <h3 className="text-2xl font-bold tracking-tight text-slate-900 truncate font-display">
+              {rec.namaKlien}
+            </h3>
+            <span className={`px-3 py-1 text-xs font-bold rounded-full uppercase tracking-wider shrink-0 inline-flex items-center gap-1.5 self-start sm:self-center ${statusStyle.badge}`}>
+              <span className={`w-1.5 h-1.5 rounded-full bg-white`} />
+              {rec.status}
+            </span>
+          </div>
+          
+          <p className="text-sm text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-slate-700">{rec.pekerjaanKrt || 'Tidak Bekerja'}</span>
+            <span className="text-slate-300">•</span>
+            <span className="font-mono text-xs bg-slate-100 py-0.5 px-2 rounded">{rec.noTelpon}</span>
+          </p>
+          
+          <p className="text-xs text-slate-450 mt-2 flex items-start gap-1 p-2 bg-slate-50/50 rounded-lg border border-slate-100">
+            <span className="mt-0.5">📍</span>
+            <span className="italic leading-relaxed">
+              {rec.alamatKlien}, Kel. {rec.kelurahan}, Kec. {rec.kecamatan}
+            </span>
+          </p>
+        </div>
+      </div>
+
+      {/* CARD 2: METADATA INDIGO BLOCK */}
+      <div id="bento-metadata" className="col-span-1 bg-gradient-to-br from-indigo-600 to-indigo-700 text-white p-6 rounded-2xl flex flex-col justify-between shadow-md shadow-indigo-100 relative overflow-hidden group">
+        <div className="absolute -right-6 -bottom-6 w-20 h-20 bg-indigo-500/20 rounded-full scale-110 group-hover:scale-125 transition-transform" />
+        <div>
+          <p className="text-[10px] text-indigo-200 uppercase font-black tracking-widest flex items-center gap-1">
+            <HelpCircle className="w-3.5 h-3.5 text-indigo-300" /> Fasilitator Lapangan
+          </p>
+          <p className="text-xl font-bold mt-1.5 font-display tracking-wide">{rec.namaFasilitator}</p>
+        </div>
+        <div className="mt-6 pt-4 border-t border-indigo-500/40">
+          <p className="text-[10px] text-indigo-200 uppercase font-black tracking-widest flex items-center gap-1">
+            <Calendar className="w-3.5 h-3.5" /> Waktu Kunjungan
+          </p>
+          <p className="text-sm font-medium italic mt-1 text-indigo-100">{rec.hariTanggal}</p>
+        </div>
+      </div>
+
+      {/* NEW BENTO CARD: STATUS VERIFIKASI & DOKUMENTASI LAPANGAN (Col Span 3) */}
+      <div id="bento-visit-verification" className="col-span-1 md:col-span-3 bg-white p-6 rounded-2xl border border-slate-205/90 shadow-sm relative overflow-hidden flex flex-col md:flex-row gap-6 items-stretch">
+        <div className="flex-1 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="p-1 text-xs font-semibold rounded bg-slate-100 text-slate-700">Aktor &amp; Alur</span>
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">
+                  Status Verifikasi &amp; Bukti Kunjungan
+                </h4>
+              </div>
+              
+              <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg uppercase tracking-wider inline-flex items-center gap-1.5 ${
+                rec.statusKunjungan === 'Sudah Dikunjungi' 
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200/50' 
+                  : 'bg-amber-100 text-amber-800 border border-amber-200/50'
+              }`}>
+                {rec.statusKunjungan === 'Sudah Dikunjungi' ? (
+                  <>
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    Sudah Dikunjungi (Verified)
+                  </>
+                ) : (
+                  <>
+                    <Clock className="w-3 h-3 text-amber-650 animate-pulse" />
+                    Belum Dikunjungi (Pending)
+                  </>
+                )}
+              </span>
+            </div>
+
+            <div className="space-y-4">
+              {rec.statusKunjungan === 'Sudah Dikunjungi' ? (
+                <div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mb-3">
+                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tanggal Verifikasi Fisik</p>
+                      <p className="text-slate-800 font-semibold mt-0.5">{rec.tanggalPemeriksaan || rec.hariTanggal}</p>
+                    </div>
+                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Metode Registrasi Awal</p>
+                      <p className="text-slate-800 font-semibold mt-0.5">
+                        {rec.diinputOleh === 'Warga' ? (
+                          <span className="text-amber-750 font-bold">📝 Pengaduan Mandiri Warga</span>
+                        ) : (
+                          <span className="text-indigo-750 font-bold">💻 Diinput oleh Admin Database</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Catatan Auditor Lapangan / Fasilitator:</p>
+                    <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl">
+                      <p className="text-slate-700 text-xs italic leading-relaxed">
+                        "{rec.catatanPemeriksa || 'Telah diverifikasi sesuai standar operational SLRT Dinsos Kota Tanjungbalai.'}"
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-2">
+                  <p className="text-slate-655 text-xs leading-relaxed">
+                    Klien ini dideklarasikan oleh <strong className="text-slate-800">{rec.diinputOleh === 'Warga' ? 'Keluarga Warga' : 'Admin Dinsos'}</strong> dan memiliki status <strong className="text-amber-800 leading-none">Belum Dikunjungi Lapangan</strong>.
+                  </p>
+                  <p className="text-slate-455 text-[11px] mt-1 italic leading-normal">
+                    Fasilitator pendata harus melakukan verifikasi kependudukan langsung ke alamat rumah klien untuk membuktikan kondisi 18 instrumen kualifikasi kemiskinan dan melampirkan dokumentasi absensi fisik.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Facilitator role inspection button display */}
+          {rec.statusKunjungan !== 'Sudah Dikunjungi' && userRole === 'facilitator' && onVerifyVisit && (
+            <div className="mt-4 pt-3 border-t border-slate-100">
+              <button
+                onClick={() => onVerifyVisit(rec)}
+                className="w-full sm:w-auto py-2.5 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-display cursor-pointer"
+              >
+                <Camera className="w-4 h-4" /> Verifikasi &amp; Unggah Dokumentasi Kunjungan
+              </button>
+            </div>
+          )}
+          
+          {rec.statusKunjungan !== 'Sudah Dikunjungi' && userRole !== 'facilitator' && (
+            <div className="mt-4 p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[10px] text-slate-500 italic block">
+              💡 <strong>Tips Peran:</strong> Masuk sebagai peran <strong>Fasilitator</strong> untuk melakukan kunjungan rumah, mengunggah foto bukti, dan menyelesaikan verifikasi lapangan klien ini.
+            </div>
+          )}
+        </div>
+
+        {/* PHOTO PROOF AND ATTACHMENTS (Visually displayed on the right of bento) */}
+        <div className="w-full md:w-56 shrink-0 bg-slate-50 border border-slate-150 rounded-xl p-4 flex flex-col justify-between relative overflow-hidden items-center group min-h-[160px]">
+          {rec.statusKunjungan === 'Sudah Dikunjungi' && rec.dokumentasiBukti ? (
+            <div className="w-full h-full flex flex-col justify-between">
+              <div className="w-full h-28 bg-slate-200 rounded-lg overflow-hidden relative shadow-inner border border-slate-300">
+                <img 
+                  src={rec.dokumentasiBukti} 
+                  alt="Bukti Kunjungan Fisik" 
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+                <span className="absolute bottom-1 right-1 bg-slate-900/70 backdrop-blur-xs text-[8px] font-bold text-white px-1.5 py-0.5 rounded">
+                  Foto Klien
+                </span>
+              </div>
+              <div className="mt-2 text-center">
+                <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest flex items-center justify-center gap-1">
+                  <UserCheck className="w-3.5 h-3.5" /> Bukti Terlampir
+                </p>
+                <p className="text-[9px] text-slate-400 italic truncate mt-0.5">SLRT_DOC_PROVED_{rec.id.substring(4, 9)}.JPG</p>
+              </div>
+            </div>
+          ) : (
+            <div className="my-auto text-center flex flex-col items-center justify-center gap-2 p-2">
+              <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400">
+                <Camera className="w-5 h-5" />
+              </div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Dokumentasi Fisik</p>
+              <p className="text-[9px] text-slate-400 italic max-w-[150px] leading-relaxed">
+                Belum ada foto bukti kunjungan yang diunggah.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* CARD 3: SOCIAL & ECONOMY */}
+      <div id="bento-economy" className="col-span-1 md:row-span-2 bg-white p-6 rounded-2xl border border-slate-200/95 shadow-sm flex flex-col justify-between">
+        <div>
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+              Status Ekonomi &amp; Hunian
+            </h4>
+            <span className="text-indigo-600 text-xs font-bold font-mono">18 Poin</span>
+          </div>
+          
+          <div className="space-y-3">
+            <div className="flex justify-between items-center py-1 border-b border-slate-50">
+              <span className="text-xs text-slate-400">Rataan Penghasilan</span>
+              <span className="text-xs font-bold text-slate-800">{rec.pendapatanPerbulan}</span>
+            </div>
+            
+            <div className="flex justify-between items-center py-1 border-b border-slate-50">
+              <span className="text-xs text-slate-400">Kepemilikan Rumah</span>
+              <span className="text-xs font-bold text-slate-800">{rec.statusRumah}</span>
+            </div>
+            
+            <div className="flex justify-between items-center py-1 border-b border-slate-50">
+              <span className="text-xs text-slate-400">Instalasi Listrik</span>
+              <span className="text-xs font-bold text-slate-800 truncate pl-3 text-right max-w-[150px]" title={rec.jenisPenerangan}>
+                {rec.jenisPenerangan}
+              </span>
+            </div>
+            
+            <div className="flex justify-between items-center py-1">
+              <span className="text-xs text-slate-400">Kondisi MCK</span>
+              <span className="text-xs font-bold text-slate-800 truncate pl-3 text-right max-w-[150px]" title={rec.mck}>
+                {rec.mck}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 pt-4 border-t border-slate-100">
+          <div className="bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200">
+            <p className="text-[10px] text-slate-400 uppercase font-black tracking-wider">Mewakili Kuasa</p>
+            <p className="text-sm font-semibold text-slate-700 mt-0.5">{rec.namaKuasa || '-'}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* CARD 4: COMPLAINT DETAILS (2 Column space, 2 Row Height) */}
+      <div id="bento-complaint" className="col-span-1 md:col-span-2 md:row-span-2 bg-white p-6 rounded-2xl border border-slate-200/95 shadow-sm flex flex-col justify-between h-full">
+        <div>
+          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+            <span className="p-1.5 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-lg text-sm select-none">
+              ⚠️
+            </span>
+            <h4 className="font-black text-xs text-slate-800 uppercase tracking-wider">
+              Uraian Pengaduan &amp; Masalah Klien
+            </h4>
+          </div>
+          
+          <div className="mb-4">
+            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1.5">
+              Keluhan Pemohon (Hasil Tanya Jawab):
+            </p>
+            <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+              <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap italic">
+                "{rec.jenisPengaduan || 'Tidak ada keluhan tertulis.'}"
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-slate-100">
+          <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2 flex items-center gap-1.5">
+            <HeartPulse className="w-3.5 h-3.5 text-indigo-500" /> Layanan yang Diusulkan / Diinginkan:
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            {rec.jenisLayanan.split(',').map((layanan, i) => (
+              <span 
+                key={i} 
+                className="px-3.5 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-xl text-xs font-semibold whitespace-normal leading-normal"
+              >
+                {layanan.trim()}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* CARD 5: DOCUMENTATION CHECK (2 Column Space, 1 Row Height) */}
+      <div id="bento-documents" className="col-span-1 md:col-span-2 bg-white p-6 rounded-2xl border border-slate-200/95 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-6">
+        <div className="flex-1 min-w-0">
+          <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+            <ShieldCheck className="w-3.5 h-3.5 text-indigo-650" /> Lampiran Berkas Kependudukan
+          </h4>
+          <div className="flex gap-2 mt-2.5 flex-wrap">
+            {docList.length === 0 ? (
+              <span className="text-xs text-slate-400 italic">Tidak ada lampiran dokumen</span>
+            ) : (
+              docList.map((doc, idx) => (
+                <span 
+                  key={idx} 
+                  className="flex items-center gap-1 text-xs font-bold bg-indigo-50/50 text-indigo-650 px-2.5 py-1 rounded-lg border border-indigo-100/30"
+                >
+                  ✓ {doc}
+                </span>
+              ))
+            )}
+          </div>
+        </div>
+        
+        <div className="hidden sm:block w-px h-12 bg-slate-100 shrink-0" />
+        
+        <div className="flex-1 min-w-0">
+          <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            Bantuan Sosial Aktif Terdaftar
+          </h4>
+          <p className="text-slate-700 font-bold text-sm mt-2 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
+            {rec.bantuanDiterima || 'Belum terdaftar bansos'}
+          </p>
+        </div>
+      </div>
+
+      {/* CARD 6: ACTION SLIP BUTTONS */}
+      <div id="bento-actions" className="col-span-1 bg-white p-5 rounded-2xl border border-slate-200/95 shadow-sm flex flex-col gap-2.5 justify-center">
+        <button 
+          onClick={onPrint}
+          className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-100 hover:shadow-indigo-200 transition-all transform hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-display shrink-0 cursor-pointer"
+        >
+          <Printer className="w-4 h-4" /> Cetak Slip Formulir
+        </button>
+        
+        <button 
+          onClick={onCopyFormatList}
+          className="w-full py-2.5 border border-slate-250 bg-white text-slate-650 hover:bg-slate-50 hover:text-slate-800 font-bold rounded-xl transition-all text-[11px] flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+        >
+          {copiedRecordId === 'list' ? (
+            <Check className="w-3.5 h-3.5 text-emerald-500" />
+          ) : (
+            <Clipboard className="w-3.5 h-3.5 text-slate-400" />
+          )}
+          <span>{copiedRecordId === 'list' ? 'Format Tersalin!' : 'Salin 18-Format List'}</span>
+        </button>
+      </div>
+
+      {/* DETAILED HIDDEN LIST PREVIEW LOG */}
+      <div className="col-span-1 md:col-span-3 mt-1.5">
+        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-2">Simulasi Format List 18 Lapangan Kerja (Untuk Verifikasi Cepat):</p>
+        <div className="max-h-24 bg-slate-900 border border-slate-850 rounded-xl p-3 overflow-y-auto block font-mono text-[9px] text-slate-350 select-all whitespace-pre leading-relaxed">
+          {listText}
+        </div>
+      </div>
+
+    </div>
+  );
+}
