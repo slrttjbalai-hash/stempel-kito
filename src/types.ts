@@ -25,15 +25,55 @@ export interface SLRTRecord {
   dokumentasiBukti?: string; // Data URL atau string referensi bukti gambar kontrol kependudukan
   catatanPemeriksa?: string; // Catatan tambahan hasil verifikasi lapangan
   diinputOleh?: 'Admin' | 'Warga'; // Pelapor asal data
+  namaPendata?: string; // Nama petugas pendata lapangan
+  fotoKkKtp?: string; // Foto KK / KTP
+  fotoDepanRumah?: string; // Foto Depan Rumah
 }
 
 export const TANJUNGBALAI_LOCATIONS: { [kecamatan: string]: string[] } = {
-  'Tanjungbalai Selatan': ['Indra Sakti', 'Karya', 'Pantai Johor', 'Perwira', 'Sendang Sari'],
-  'Tanjungbalai Utara': ['Karya Marisa', 'Kuala Silo Bestari', 'Matahalasan', 'Sejahtera', 'Tanjungbalai Kota IV'],
-  'Sei Tualang Raso': ['Keramat Kubu', 'Muara Sentosa', 'Pasar Baru', 'Selat Lancang', 'Selat Tanjung Medan'],
-  'Teluk Nibung': ['Kapias Pulau Buaya', 'Pematang Pasir', 'Perjuangan', 'Sei Merbau', 'Pulo Simardan'],
-  'Datuk Bandar': ['Gading', 'Pahang', 'Sijambi', 'Sirantau', 'Selat Lancang'],
-  'Datuk Bandar Timur': ['Bunga Tanjung', 'Selat Tanjung Medan', 'Semula Jadi', 'Pulau Simardan', 'Sijambi', 'Selat Lancang']
+  'Tanjungbalai Selatan': [
+    'Indra Sakti',
+    'Karya',
+    'Perwira',
+    'Pantai Burung',
+    'Tanjungbalai Kota I',
+    'Tanjungbalai Kota II'
+  ],
+  'Tanjungbalai Utara': [
+    'Matahalasan',
+    'Sejahtera',
+    'Kuala Silo Bestari',
+    'Tanjungbalai Kota III',
+    'Tanjungbalai Kota IV'
+  ],
+  'Sei Tualang Raso': [
+    'Keramat Kubah',
+    'Muara Sentosa',
+    'Pasar Baru',
+    'Sei Raja',
+    'Sumber Sari'
+  ],
+  'Teluk Nibung': [
+    'Beting Kuala Kapias',
+    'Kapias Pulau Buaya',
+    'Pematang Pasir',
+    'Perjuangan',
+    'Sei Merbau'
+  ],
+  'Datuk Bandar': [
+    'Gading',
+    'Pahang',
+    'Sijambi',
+    'Sirantau',
+    'Pantai Johor'
+  ],
+  'Datuk Bandar Timur': [
+    'Bunga Tanjung',
+    'Pulau Simardan',
+    'Selat Tanjung Medan',
+    'Semula Jadi',
+    'Selat Lancang'
+  ]
 };
 
 export const INITIAL_RECORDS: SLRTRecord[] = [
@@ -110,3 +150,56 @@ export const INITIAL_RECORDS: SLRTRecord[] = [
     diinputOleh: 'Warga'
   }
 ];
+
+export interface FacilitatorUser {
+  id: string;
+  name: string;
+  nik: string;
+  regionKecamatan: string;
+  regionKelurahan: string;
+  phone: string;
+  email: string;
+  password?: string;
+  status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  createdAt: string;
+}
+
+export const INITIAL_FACILITATORS: FacilitatorUser[] = [
+  {
+    id: 'fac-1',
+    name: 'Ahmad Fauzi',
+    nik: '1274011202890001',
+    regionKecamatan: 'Datuk Bandar',
+    regionKelurahan: 'Pahang',
+    phone: '081234567891',
+    email: 'ahmad@slrt.id',
+    password: 'fauzi123',
+    status: 'APPROVED',
+    createdAt: 'Senin, 01 Juni 2026'
+  },
+  {
+    id: 'fac-2',
+    name: 'Siti Rahma',
+    nik: '1274011505920003',
+    regionKecamatan: 'Teluk Nibung',
+    regionKelurahan: 'Sei Merbau',
+    phone: '081234567892',
+    email: 'siti@slrt.id',
+    password: 'rahma123',
+    status: 'APPROVED',
+    createdAt: 'Selasa, 02 Juni 2026'
+  },
+  {
+    id: 'fac-3',
+    name: 'Budi Hartono',
+    nik: '1274012408900002',
+    regionKecamatan: 'Sei Tualang Raso',
+    regionKelurahan: 'Pasar Baru',
+    phone: '081234567893',
+    email: 'budi@slrt.id',
+    password: 'hartono123',
+    status: 'APPROVED',
+    createdAt: 'Kamis, 04 Juni 2026'
+  }
+];
+

@@ -1,25 +1,31 @@
 import React from 'react';
 import { SLRTRecord } from '../types';
-import { Printer, Calendar, FileText, Clipboard, Check, HelpCircle, ShieldCheck, HeartPulse, Camera, Clock, CheckCircle2, UserCheck } from 'lucide-react';
+import { Printer, Calendar, FileText, Clipboard, Check, HelpCircle, ShieldCheck, HeartPulse, Camera, Clock, CheckCircle2, UserCheck, Download, Home } from 'lucide-react';
 
 interface BentoRecordDetailsProps {
   rec: SLRTRecord;
   onPrint: () => void;
+  onDownloadPDF?: () => void;
   onCopyFormatList: () => void;
   copiedRecordId: 'list' | 'tbl' | null;
   listText: string;
   userRole?: 'admin' | 'facilitator' | 'warga';
   onVerifyVisit?: (rec: SLRTRecord) => void;
+  onSyncSheets?: (rec: SLRTRecord) => void;
+  isSyncingSheets?: boolean;
 }
 
 export default function BentoRecordDetails({
   rec,
   onPrint,
+  onDownloadPDF,
   onCopyFormatList,
   copiedRecordId,
   listText,
   userRole = 'admin',
-  onVerifyVisit
+  onVerifyVisit,
+  onSyncSheets,
+  isSyncingSheets = false
 }: BentoRecordDetailsProps) {
   
   // Custom helper for status coloring
@@ -142,103 +148,147 @@ export default function BentoRecordDetails({
                   </>
                 )}
               </span>
-            </div>
+                        <div className="space-y-4">
+               {rec.statusKunjungan === 'Sudah Dikunjungi' ? (
+                 <div>
+                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs mb-3">
+                     <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tanggal Verifikasi</p>
+                       <p className="text-slate-800 font-semibold mt-0.5">{rec.tanggalPemeriksaan || rec.hariTanggal}</p>
+                     </div>
+                     <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Nama Pendata</p>
+                       <p className="text-emerald-700 font-extrabold mt-0.5">{rec.namaPendata || rec.namaFasilitator || 'Petugas SLRT'}</p>
+                     </div>
+                     <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Metode Registrasi</p>
+                       <p className="text-slate-800 font-semibold mt-0.5">
+                         {rec.diinputOleh === 'Warga' ? (
+                           <span className="text-amber-700 font-bold">📝 Mandiri Warga</span>
+                         ) : (
+                           <span className="text-indigo-750 font-bold">💻 Admin Dinsos</span>
+                         )}
+                       </p>
+                     </div>
+                   </div>
 
-            <div className="space-y-4">
-              {rec.statusKunjungan === 'Sudah Dikunjungi' ? (
-                <div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mb-3">
-                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tanggal Verifikasi Fisik</p>
-                      <p className="text-slate-800 font-semibold mt-0.5">{rec.tanggalPemeriksaan || rec.hariTanggal}</p>
-                    </div>
-                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Metode Registrasi Awal</p>
-                      <p className="text-slate-800 font-semibold mt-0.5">
-                        {rec.diinputOleh === 'Warga' ? (
-                          <span className="text-amber-750 font-bold">📝 Pengaduan Mandiri Warga</span>
-                        ) : (
-                          <span className="text-indigo-750 font-bold">💻 Diinput oleh Admin Database</span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
+                   <div>
+                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Catatan Auditor Lapangan / Fasilitator:</p>
+                     <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl">
+                       <p className="text-slate-700 text-xs italic leading-relaxed">
+                         "{rec.catatanPemeriksa || 'Telah diverifikasi sesuai standar operational SLRT Dinsos Kota Tanjungbalai.'}"
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+               ) : (
+                 <div className="py-2">
+                   <p className="text-slate-655 text-xs leading-relaxed">
+                     Klien ini dideklarasikan oleh <strong className="text-slate-800">{rec.diinputOleh === 'Warga' ? 'Keluarga Warga' : 'Admin Dinsos'}</strong> dan memiliki status <strong className="text-amber-800 leading-none">Belum Dikunjungi Lapangan</strong>.
+                   </p>
+                   <p className="text-slate-455 text-[11px] mt-1 italic leading-normal">
+                     Fasilitator pendata harus melakukan verifikasi kependudukan langsung ke alamat rumah klien untuk membuktikan kondisi 18 instrumen kualifikasi kemiskinan dan melampirkan dokumentasi KK/KTP serta Foto Depan Rumah.
+                   </p>
+                 </div>
+               )}
+             </div>
+           </div>
 
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Catatan Auditor Lapangan / Fasilitator:</p>
-                    <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl">
-                      <p className="text-slate-700 text-xs italic leading-relaxed">
-                        "{rec.catatanPemeriksa || 'Telah diverifikasi sesuai standar operational SLRT Dinsos Kota Tanjungbalai.'}"
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="py-2">
-                  <p className="text-slate-655 text-xs leading-relaxed">
-                    Klien ini dideklarasikan oleh <strong className="text-slate-800">{rec.diinputOleh === 'Warga' ? 'Keluarga Warga' : 'Admin Dinsos'}</strong> dan memiliki status <strong className="text-amber-800 leading-none">Belum Dikunjungi Lapangan</strong>.
-                  </p>
-                  <p className="text-slate-455 text-[11px] mt-1 italic leading-normal">
-                    Fasilitator pendata harus melakukan verifikasi kependudukan langsung ke alamat rumah klien untuk membuktikan kondisi 18 instrumen kualifikasi kemiskinan dan melampirkan dokumentasi absensi fisik.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+           {/* Facilitator role inspection button display */}
+           {rec.statusKunjungan !== 'Sudah Dikunjungi' && userRole === 'facilitator' && onVerifyVisit && (
+             <div className="mt-4 pt-3 border-t border-slate-100">
+               <button
+                 onClick={() => onVerifyVisit(rec)}
+                 className="w-full sm:w-auto py-2.5 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-display cursor-pointer animate-pulse"
+               >
+                 <Camera className="w-4 h-4" /> Mulai Verifikasi &amp; Ambil Gambar KK/KTP &amp; Rumah
+               </button>
+             </div>
+           )}
+           
+           {rec.statusKunjungan !== 'Sudah Dikunjungi' && userRole !== 'facilitator' && (
+             <div className="mt-4 p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[10px] text-slate-500 italic block">
+               💡 <strong>Tips Peran:</strong> Masuk sebagai peran <strong>Fasilitator</strong> untuk melakukan kunjungan rumah, mengunggah foto bukti, dan menyelesaikan verifikasi lapangan klien ini.
+             </div>
+           )}
+         </div>
 
-          {/* Facilitator role inspection button display */}
-          {rec.statusKunjungan !== 'Sudah Dikunjungi' && userRole === 'facilitator' && onVerifyVisit && (
-            <div className="mt-4 pt-3 border-t border-slate-100">
-              <button
-                onClick={() => onVerifyVisit(rec)}
-                className="w-full sm:w-auto py-2.5 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-display cursor-pointer"
-              >
-                <Camera className="w-4 h-4" /> Verifikasi &amp; Unggah Dokumentasi Kunjungan
-              </button>
-            </div>
-          )}
-          
-          {rec.statusKunjungan !== 'Sudah Dikunjungi' && userRole !== 'facilitator' && (
-            <div className="mt-4 p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[10px] text-slate-500 italic block">
-              💡 <strong>Tips Peran:</strong> Masuk sebagai peran <strong>Fasilitator</strong> untuk melakukan kunjungan rumah, mengunggah foto bukti, dan menyelesaikan verifikasi lapangan klien ini.
-            </div>
-          )}
-        </div>
+         {/* PHOTO PROOF AND ATTACHMENTS (Visually displayed on the right of bento) */}
+         <div className="w-full md:w-[220px] shrink-0 bg-slate-50 border border-slate-150 rounded-2xl p-4 flex flex-col justify-start gap-3.5 relative overflow-hidden items-stretch">
+           <h5 className="text-[10px] font-black text-slate-550 uppercase tracking-wider text-center border-b border-slate-200 pb-2">
+             📂 Berkas &amp; Foto Verifikasi
+           </h5>
 
-        {/* PHOTO PROOF AND ATTACHMENTS (Visually displayed on the right of bento) */}
-        <div className="w-full md:w-56 shrink-0 bg-slate-50 border border-slate-150 rounded-xl p-4 flex flex-col justify-between relative overflow-hidden items-center group min-h-[160px]">
-          {rec.statusKunjungan === 'Sudah Dikunjungi' && rec.dokumentasiBukti ? (
-            <div className="w-full h-full flex flex-col justify-between">
-              <div className="w-full h-28 bg-slate-200 rounded-lg overflow-hidden relative shadow-inner border border-slate-300">
-                <img 
-                  src={rec.dokumentasiBukti} 
-                  alt="Bukti Kunjungan Fisik" 
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-                <span className="absolute bottom-1 right-1 bg-slate-900/70 backdrop-blur-xs text-[8px] font-bold text-white px-1.5 py-0.5 rounded">
-                  Foto Klien
-                </span>
-              </div>
-              <div className="mt-2 text-center">
-                <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest flex items-center justify-center gap-1">
-                  <UserCheck className="w-3.5 h-3.5" /> Bukti Terlampir
-                </p>
-                <p className="text-[9px] text-slate-400 italic truncate mt-0.5">SLRT_DOC_PROVED_{rec.id.substring(4, 9)}.JPG</p>
-              </div>
-            </div>
-          ) : (
-            <div className="my-auto text-center flex flex-col items-center justify-center gap-2 p-2">
-              <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400">
-                <Camera className="w-5 h-5" />
-              </div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Dokumentasi Fisik</p>
-              <p className="text-[9px] text-slate-400 italic max-w-[150px] leading-relaxed">
-                Belum ada foto bukti kunjungan yang diunggah.
-              </p>
-            </div>
-          )}
-        </div>
+           {/* 1. Foto KK / KTP */}
+           <div className="space-y-1">
+             <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight block">1. Bukti Gambar KK / KTP</span>
+             {rec.statusKunjungan === 'Sudah Dikunjungi' && rec.fotoKkKtp ? (
+               <div className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in">
+                 <img 
+                   src={rec.fotoKkKtp} 
+                   alt="Foto KK / KTP" 
+                   referrerPolicy="no-referrer"
+                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-350"
+                 />
+                 <span className="absolute bottom-1 right-1 bg-slate-900/65 text-[7px] font-black text-white px-1 py-0.5 rounded uppercase">
+                   Dokumen
+                 </span>
+               </div>
+             ) : (
+               <div className="h-12 bg-slate-100 rounded-lg border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 text-[8px] leading-tight font-sans">
+                 <FileText className="w-4 h-4 text-slate-300 mb-0.5" />
+                 <span>Belum ada KK/KTP</span>
+               </div>
+             )}
+           </div>
+
+           {/* 2. Foto Depan Rumah */}
+           <div className="space-y-1">
+             <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight block">2. Foto Depan Rumah</span>
+             {rec.statusKunjungan === 'Sudah Dikunjungi' && rec.fotoDepanRumah ? (
+               <div className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in">
+                 <img 
+                   src={rec.fotoDepanRumah} 
+                   alt="Foto Depan Rumah" 
+                   referrerPolicy="no-referrer"
+                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-350"
+                 />
+                 <span className="absolute bottom-1 right-1 bg-slate-900/65 text-[7px] font-black text-white px-1 py-0.5 rounded uppercase">
+                   Depan Rumah
+                 </span>
+               </div>
+             ) : (
+               <div className="h-12 bg-slate-100 rounded-lg border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 text-[8px] leading-tight font-sans">
+                 <Home className="w-4 h-4 text-slate-300 mb-0.5" />
+                 <span>Belum ada Foto Rumah</span>
+               </div>
+             )}
+           </div>
+
+           {/* 3. Foto Ops Kunjungan */}
+           <div className="space-y-1">
+             <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight block">3. Foto Kontrol Kunjungan</span>
+             {rec.statusKunjungan === 'Sudah Dikunjungi' && rec.dokumentasiBukti ? (
+               <div className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in">
+                 <img 
+                   src={rec.dokumentasiBukti} 
+                   alt="Foto Kontrol Lapangan" 
+                   referrerPolicy="no-referrer"
+                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-350"
+                 />
+                 <span className="absolute bottom-1 right-1 bg-slate-900/65 text-[7px] font-black text-white px-1 py-0.5 rounded uppercase">
+                   Ops Lapangan
+                 </span>
+               </div>
+             ) : (
+               <div className="h-12 bg-slate-100 rounded-lg border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 text-[8px] leading-tight font-sans">
+                 <Camera className="w-4 h-4 text-slate-300 mb-0.5" />
+                 <span>Belum ada Foto Kontrol</span>
+               </div>
+             )}
+           </div>
+         </div>
+       </div>
       </div>
 
       {/* CARD 3: SOCIAL & ECONOMY */}
@@ -366,14 +416,35 @@ export default function BentoRecordDetails({
       <div id="bento-actions" className="col-span-1 bg-white p-5 rounded-2xl border border-slate-200/95 shadow-sm flex flex-col gap-2.5 justify-center">
         <button 
           onClick={onPrint}
-          className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-100 hover:shadow-indigo-200 transition-all transform hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-display shrink-0 cursor-pointer"
+          className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-100 hover:shadow-indigo-200 transition-all transform hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-display shrink-0 cursor-pointer"
         >
           <Printer className="w-4 h-4" /> Cetak Slip Formulir
         </button>
         
+        {onDownloadPDF && (
+          <button 
+            onClick={onDownloadPDF}
+            className="w-full py-2.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white font-bold rounded-xl shadow-lg shadow-rose-150 hover:shadow-rose-250 transition-all transform hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-display shrink-0 cursor-pointer"
+          >
+            <Download className="w-4 h-4" /> Unduh Laporan PDF
+          </button>
+        )}
+        
+        {onSyncSheets && (
+          <button 
+            type="button"
+            onClick={() => onSyncSheets(rec)}
+            disabled={isSyncingSheets}
+            className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 text-white font-bold rounded-xl shadow-sm hover:shadow-md transition-all text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed select-none"
+          >
+            <span>📊</span>
+            <span>{isSyncingSheets ? 'Mengirim...' : 'Kirim ke Google Sheets'}</span>
+          </button>
+        )}
+
         <button 
           onClick={onCopyFormatList}
-          className="w-full py-2.5 border border-slate-250 bg-white text-slate-650 hover:bg-slate-50 hover:text-slate-800 font-bold rounded-xl transition-all text-[11px] flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+          className="w-full py-2 border border-slate-250 bg-white text-slate-650 hover:bg-slate-50 hover:text-slate-800 font-bold rounded-xl transition-all text-[11px] flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
         >
           {copiedRecordId === 'list' ? (
             <Check className="w-3.5 h-3.5 text-emerald-500" />

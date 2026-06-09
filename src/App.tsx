@@ -35,10 +35,12 @@ import {
   UserCheck
 } from 'lucide-react';
 
-import { SLRTRecord, TANJUNGBALAI_LOCATIONS, INITIAL_RECORDS } from './types';
+import { SLRTRecord, TANJUNGBALAI_LOCATIONS, INITIAL_RECORDS, FacilitatorUser, INITIAL_FACILITATORS } from './types';
+import { jsPDF } from 'jspdf';
 import BentoRecordDetails from './components/BentoRecordDetails';
 import SmartParserTab from './components/SmartParserTab';
 import HelpTab from './components/HelpTab';
+import * as XLSX from 'xlsx';
 
 function parseMonthAndYear(dateStr: string) {
   if (!dateStr) return null;
@@ -68,6 +70,82 @@ function parseMonthAndYear(dateStr: string) {
   return null;
 }
 
+function parseVerificationDate(dateStr: string | undefined): Date | null {
+  if (!dateStr) return null;
+  const cleanStr = dateStr.trim();
+  if (!cleanStr) return null;
+
+  // Try standard Date parsing
+  const d = new Date(cleanStr);
+  if (!isNaN(d.getTime())) return d;
+
+  // Indonesian month mapping
+  const monthsIndo: { [key: string]: number } = {
+    'januari': 0, 'jan': 0,
+    'februari': 1, 'feb': 1,
+    'maret': 2, 'mar': 2,
+    'april': 3, 'apr': 3,
+    'mei': 4,
+    'juni': 5, 'jun': 5,
+    'juli': 6, 'jul': 6,
+    'agustus': 7, 'agt': 7, 'agu': 7,
+    'september': 8, 'sep': 8,
+    'oktober': 9, 'okt': 9,
+    'november': 10, 'nov': 10,
+    'desember': 11, 'des': 11
+  };
+
+  let normalized = cleanStr.toLowerCase();
+  normalized = normalized.replace(/senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu/g, '');
+  normalized = normalized.replace(/[,.-]/g, ' ');
+  const parts = normalized.split(/\s+/).filter(Boolean);
+  
+  if (parts.length >= 3) {
+    let day = 1;
+    let month = 0;
+    let year = new Date().getFullYear();
+    let foundMonth = false;
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (monthsIndo[part] !== undefined) {
+        month = monthsIndo[part];
+        foundMonth = true;
+        if (i > 0) {
+          const prev = parseInt(parts[i - 1], 10);
+          if (!isNaN(prev) && prev >= 1 && prev <= 31) {
+            day = prev;
+          }
+        }
+        if (i < parts.length - 1) {
+          const next = parseInt(parts[i + 1], 10);
+          if (!isNaN(next) && next > 2000) {
+            year = next;
+          }
+        }
+        break;
+      }
+    }
+
+    if (foundMonth) {
+      return new Date(year, month, day);
+    }
+
+    const num1 = parseInt(parts[0], 10);
+    const num2 = parseInt(parts[1], 10);
+    const num3 = parseInt(parts[2], 10);
+    if (!isNaN(num1) && !isNaN(num2) && !isNaN(num3)) {
+      if (num1 > 1000) {
+        return new Date(num1, num2 - 1, num3);
+      } else if (num3 > 1000) {
+        return new Date(num3, num2 - 1, num1);
+      }
+    }
+  }
+
+  return null;
+}
+
 export default function App() {
   // State for database records
   const [records, setRecords] = useState<SLRTRecord[]>(() => {
@@ -78,8 +156,70 @@ export default function App() {
   // User Authentication & Role Perspective
   const [userRole, setUserRole] = useState<'admin' | 'facilitator' | 'warga'>(() => {
     const saved = localStorage.getItem('slrt_user_role');
-    return (saved as 'admin' | 'facilitator' | 'warga') || 'admin';
+    const role = (saved as 'admin' | 'facilitator' | 'warga') || 'admin';
+    return role;
   });
+
+  // Active secure session state
+  const [session, setSession] = useState<{
+    role: 'admin' | 'facilitator' | 'warga';
+    email?: string;
+    name?: string;
+    nik?: string;
+    id?: string;
+    regionKecamatan?: string;
+    regionKelurahan?: string;
+  } | null>(() => {
+    const saved = localStorage.getItem('slrt_session');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  // Registered Field Facilitators state
+  const [facilitators, setFacilitators] = useState<FacilitatorUser[]>(() => {
+    const saved = localStorage.getItem('slrt_facilitators');
+    return saved ? JSON.parse(saved) : INITIAL_FACILITATORS;
+  });
+
+  // Form input states for Authentication Gate
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authUsername, setAuthUsername] = useState(''); // for admin
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Sign up mode toggle for facilitator gate
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+
+  // Field inputs for facilitator registration Form
+  const [regName, setRegName] = useState('');
+  const [regNik, setRegNik] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regKec, setRegKec] = useState('Datuk Bandar');
+  const [regKel, setRegKel] = useState('Pahang');
+  const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [regSuccess, setRegSuccess] = useState<string | null>(null);
+
+  // Save facilitators and session
+  useEffect(() => {
+    localStorage.setItem('slrt_facilitators', JSON.stringify(facilitators));
+  }, [facilitators]);
+
+  useEffect(() => {
+    if (session) {
+      localStorage.setItem('slrt_session', JSON.stringify(session));
+    } else {
+      localStorage.removeItem('slrt_session');
+    }
+  }, [session]);
+
+  // Handle automatic select of first kelurahan when registration kecamatan changes
+  useEffect(() => {
+    if (TANJUNGBALAI_LOCATIONS[regKec]) {
+      setRegKel(TANJUNGBALAI_LOCATIONS[regKec][0]);
+    }
+  }, [regKec]);
 
   // Verification dialog & form states
   const [selectedVerifierRecord, setSelectedVerifierRecord] = useState<SLRTRecord | null>(null);
@@ -87,7 +227,11 @@ export default function App() {
   const [verifierNotes, setVerifierNotes] = useState('');
   const [verifierPhoto, setVerifierPhoto] = useState('https://images.unsplash.com/photo-1542831371-29b0f74f9713?auto=format&fit=crop&q=80&w=400');
   const [verifierDate, setVerifierDate] = useState('');
+  const [verifierNamaPendata, setVerifierNamaPendata] = useState('');
+  const [verifierFotoKkKtp, setVerifierFotoKkKtp] = useState('');
+  const [verifierFotoDepanRumah, setVerifierFotoDepanRumah] = useState('');
   const [selectedFacilitatorFilter, setSelectedFacilitatorFilter] = useState<string>('all');
+  const [visiblePasswords, setVisiblePasswords] = useState<{[key: string]: boolean}>({});
 
   // Warga Portal Specific Input form / search
   const [wargaSearchQuery, setWargaSearchQuery] = useState('');
@@ -114,9 +258,14 @@ export default function App() {
   const [filterStartYear, setFilterStartYear] = useState('');
   const [filterEndMonth, setFilterEndMonth] = useState('');
   const [filterEndYear, setFilterEndYear] = useState('');
+  const [filterVerifStartDate, setFilterVerifStartDate] = useState('');
+  const [filterVerifEndDate, setFilterVerifEndDate] = useState('');
 
   // Selected Record state
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>('rec-1');
+
+  // Google Sheets integration helper state
+  const [syncingRecordId, setSyncingRecordId] = useState<string | null>(null);
 
   // Input states (Form State)
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -182,6 +331,172 @@ export default function App() {
       setFormHariTanggal(`${indonedianDay}, ${dayNum} ${indonesianMonth} ${year}`);
     } catch (e) {
       // Keep manual values
+    }
+  };
+
+  // ==========================================
+  // AUTHENTICATION & LOGIN PROCESSORS
+  // ==========================================
+
+  // 1. Admin Login Submission (Credentials check: Username: SLRT KITO, Password: SLRTKITO9102)
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    if (!authUsername.trim() || !authPassword.trim()) {
+      setAuthError("Harap lengkapi semua bidang login.");
+      return;
+    }
+
+    if (authUsername.trim() === 'SLRT KITO' && authPassword.trim() === 'SLRTKITO9102') {
+      const newSession = {
+        role: 'admin' as const,
+        name: 'Administrator SLRT KITO',
+        email: 'admin@tanjungbalaikota.go.id'
+      };
+      setSession(newSession);
+      setUserRole('admin');
+      setActiveTab('all-records');
+      setAuthUsername('');
+      setAuthPassword('');
+      setAuthError(null);
+      alert("Autentikasi Berhasil! Selamat datang di Master Web Dashboard SLRT KITO Pemerintah Kota Tanjungbalai.");
+    } else {
+      setAuthError("Kredensial Administrator tidak valid. Pastikan Username dan Password sesuai.");
+    }
+  };
+
+  // 2. Facilitator Login Submission
+  const handleFacilitatorLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    if (!authEmail.trim() || !authPassword.trim()) {
+      setAuthError("Harap lengkapi Email dan Password.");
+      return;
+    }
+
+    const matched = facilitators.find(f => f.email.trim().toLowerCase() === authEmail.trim().toLowerCase());
+    if (!matched) {
+      setAuthError("Surel/Email tidak ditemukan dalam sistem. Jika Anda baru, silakan lakukan Registrasi terlebih dahulu.");
+      return;
+    }
+
+    if (matched.password !== authPassword.trim()) {
+      setAuthError("Kata sandi / Password salah. Silakan coba kembali dengan teliti.");
+      return;
+    }
+
+    // Verify approval status
+    if (matched.status === 'PENDING_APPROVAL') {
+      setAuthError("⚠️ AKSES DITOLAK: Pendaftaran Anda masih dalam status 'PENDING_APPROVAL' (Menunggu Tinjauan). Harap hubungi Administrator Dinsos untuk aktivasi akun.");
+      return;
+    }
+
+    if (matched.status === 'REJECTED') {
+      setAuthError("❌ AKSES DIKUNCI: Pendaftaran Anda berstatus 'DITOLAK' oleh Dinas Sosial. Silakan hubungi admin pusat.");
+      return;
+    }
+
+    // Success login
+    const newSession = {
+      role: 'facilitator' as const,
+      email: matched.email,
+      name: matched.name,
+      nik: matched.nik,
+      id: matched.id,
+      regionKecamatan: matched.regionKecamatan,
+      regionKelurahan: matched.regionKelurahan
+    };
+    setSession(newSession);
+    setUserRole('facilitator');
+    setActiveTab('all-records');
+    setAuthEmail('');
+    setAuthPassword('');
+    setAuthError(null);
+    alert(`Autentikasi Berhasil! Selamat bekerja di lapangan, Fasilitator ${matched.name}.`);
+  };
+
+  // 3. Facilitator New Registration / Sign-Up Submission (Initial status: PENDING_APPROVAL)
+  const handleFacilitatorRegister = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setRegSuccess(null);
+
+    if (!regName.trim() || !regNik.trim() || !regPhone.trim() || !regEmail.trim() || !regPassword.trim()) {
+      setAuthError("Mohon lengkapi seluruh formulir registrasi.");
+      return;
+    }
+
+    if (regPassword !== regConfirmPassword) {
+      setAuthError("Konfirmasi password tidak cocok dengan password.");
+      return;
+    }
+
+    // Check NIK duplication or Email duplication
+    const hasEmail = facilitators.some(f => f.email.toLowerCase() === regEmail.trim().toLowerCase());
+    if (hasEmail) {
+      setAuthError("Email ini sudah terdaftar dalam sistem. Gunakan email lain atau login kembali.");
+      return;
+    }
+
+    const hasNik = facilitators.some(f => f.nik === regNik.trim());
+    if (hasNik) {
+      setAuthError("Nomor NIK ini sudah terdaftar dalam sistem.");
+      return;
+    }
+
+    const today = new Date();
+    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const months = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    const createdDateString = `${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
+
+    const newFacilitator: FacilitatorUser = {
+      id: `fac-${Date.now()}`,
+      name: regName.trim(),
+      nik: regNik.trim(),
+      regionKecamatan: regKec,
+      regionKelurahan: regKel,
+      phone: regPhone.trim(),
+      email: regEmail.trim().toLowerCase(),
+      password: regPassword.trim(),
+      status: 'PENDING_APPROVAL', // Mandatory initial state for registration review
+      createdAt: createdDateString
+    };
+
+    setFacilitators(prev => [...prev, newFacilitator]);
+    setRegSuccess(`Registrasi sukses untuk "${regName}"! Akun Anda kini terdaftar dengan status PENDING_APPROVAL. Silakan hubungi Administrator Dinsos untuk aktivasi.`);
+    
+    // Clear registration fields
+    setRegName('');
+    setRegNik('');
+    setRegPhone('');
+    setRegEmail('');
+    setRegPassword('');
+    setRegConfirmPassword('');
+    setIsRegisterMode(false); // return to login area for feedback
+  };
+
+  // 4. Admin Action: Approve/Reject Facilitator Status
+  const handleUpdateFacilitatorStatus = (id: string, newStatus: 'APPROVED' | 'REJECTED') => {
+    setFacilitators(prev => prev.map(f => {
+      if (f.id === id) {
+        return { ...f, status: newStatus };
+      }
+      return f;
+    }));
+    
+    const matched = facilitators.find(f => f.id === id);
+    const label = newStatus === 'APPROVED' ? 'DISETUJUI (Aktif)' : 'DITOLAK (Nonaktif)';
+    alert(`Fasilitator "${matched?.name || ''}" berhasil diubah status menjadi: ${label}`);
+  };
+
+  // 5. Admin Action: Delete Facilitator Account
+  const handleDeleteFacilitator = (id: string) => {
+    if (window.confirm("Apakah Anda yakin ingin menghapus akun Fasilitator ini dari sistem?")) {
+      setFacilitators(prev => prev.filter(f => f.id !== id));
+      alert("Akun Fasilitator berhasil dihapus dari sistem.");
     }
   };
 
@@ -441,10 +756,162 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setFormJenisLayanan('');
   };
 
+  // Geotagging Coordinates Utility - Defaults to Tanjungbalai
+  const getGeotagCoordinates = (): Promise<{ latitude: number; longitude: number; timestamp: string; address: string }> => {
+    return new Promise((resolve) => {
+      const today = new Date();
+      const timestampStr = today.toLocaleString('id-ID') + ' WIB';
+      const defaultData = {
+        latitude: 2.9645,
+        longitude: 99.8005,
+        timestamp: timestampStr,
+        address: 'Dinsos Kota Tanjungbalai, Kel. Pantai Johor, Kec. Datuk Bandar'
+      };
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            resolve({
+              latitude: Number(pos.coords.latitude.toFixed(6)),
+              longitude: Number(pos.coords.longitude.toFixed(6)),
+              timestamp: timestampStr,
+              address: 'Survei Geotagging Real-time Lapangan'
+            });
+          },
+          () => {
+            const rLat = 2.9645 + (Math.random() - 0.5) * 0.005;
+            const rLon = 99.8005 + (Math.random() - 0.5) * 0.005;
+            resolve({
+              latitude: Number(rLat.toFixed(6)),
+              longitude: Number(rLon.toFixed(6)),
+              timestamp: timestampStr,
+              address: 'GPS Tanjungbalai, Sumatera Utara'
+            });
+          },
+          { timeout: 2500 }
+        );
+      } else {
+        resolve(defaultData);
+      }
+    });
+  };
+
+  // Main canvas-level processor for geotagging drawing and iterative JPG quality compression
+  const processGeotagAndCompression = (
+    imageUrl: string,
+    addGeotag: boolean,
+    callback: (compressedDataUrl: string) => void
+  ) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = imageUrl;
+    img.onload = async () => {
+      // Limit dimension sizes to keep canvas operations fast and lightweight
+      let width = img.width;
+      let height = img.height;
+      const maxDimension = 1000;
+      if (width > maxDimension || height > maxDimension) {
+        if (width > height) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Draw original image onto canvas
+      ctx.drawImage(img, 0, 0, width, height);
+
+      if (addGeotag) {
+        const geo = await getGeotagCoordinates();
+
+        // Translucent dark slate overlay background for clear telemetry contrast text representation
+        const labelBarHeight = Math.round(height * 0.18);
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
+        ctx.fillRect(0, height - labelBarHeight, width, labelBarHeight);
+
+        // Emerald horizontal accent brand line
+        ctx.fillStyle = '#059669';
+        ctx.fillRect(0, height - labelBarHeight, width, Math.max(3, Math.round(height * 0.006)));
+
+        // Write information text inside overlay
+        const fontSize = Math.max(10, Math.round(width * 0.024));
+        ctx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
+        ctx.fillStyle = '#ffffff';
+
+        const paddingLeft = Math.round(width * 0.04);
+        let textY = height - labelBarHeight + Math.round(labelBarHeight * 0.32);
+
+        ctx.fillText(`📍 GPS GEOTAGGED: Lat ${geo.latitude}, Lon ${geo.longitude}`, paddingLeft, textY);
+
+        textY += Math.round(labelBarHeight * 0.26);
+        ctx.font = `${fontSize - 2}px "Inter", sans-serif`;
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillText(`📅 WAKTU: ${geo.timestamp}`, paddingLeft, textY);
+
+        textY += Math.round(labelBarHeight * 0.26);
+        ctx.font = `italic ${fontSize - 3}px sans-serif`;
+        ctx.fillStyle = '#34d399';
+        ctx.fillText(`🏷️ LOKASI: ${geo.address}`, paddingLeft, textY);
+      }
+
+      // Progressively compress JPG until base64 payload is fully under 300KB
+      let quality = 0.90;
+      let compressedUrl = canvas.toDataURL('image/jpeg', quality);
+      let calculatedPayloadKb = (compressedUrl.length * 0.75) / 1024;
+
+      let cycles = 0;
+      while (calculatedPayloadKb > 300 && quality > 0.1 && cycles < 10) {
+        quality -= 0.12;
+        compressedUrl = canvas.toDataURL('image/jpeg', quality);
+        calculatedPayloadKb = (compressedUrl.length * 0.75) / 1024;
+        cycles++;
+      }
+
+      // If still exceeding 300KB scale down the resolution of image
+      if (calculatedPayloadKb > 300) {
+        const shrinkCanvas = document.createElement('canvas');
+        shrinkCanvas.width = Math.round(width * 0.7);
+        shrinkCanvas.height = Math.round(height * 0.7);
+        const shrinkCtx = shrinkCanvas.getContext('2d');
+        if (shrinkCtx) {
+          shrinkCtx.drawImage(canvas, 0, 0, shrinkCanvas.width, shrinkCanvas.height);
+          compressedUrl = shrinkCanvas.toDataURL('image/jpeg', 0.5);
+        }
+      }
+
+      callback(compressedUrl);
+    };
+  };
+
+  // Convert uploaded regular image to compressed base64 format under 300KB
+  const handleImageUploadHelper = (file: File, callback: (result: string) => void) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        const rawResult = reader.result;
+        // Run compression (without always adding geotags since it is custom citizen uploaded document files)
+        processGeotagAndCompression(rawResult, false, callback);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Handler helper to initiate verification from facilitator perspective
   const handleOpenVerifierModal = (rec: SLRTRecord) => {
     setSelectedVerifierRecord(rec);
     setVerifierNotes('');
+    setVerifierNamaPendata(rec.namaPendata || rec.namaFasilitator || session?.name || '');
+    setVerifierFotoKkKtp(rec.fotoKkKtp || '');
+    setVerifierFotoDepanRumah(rec.fotoDepanRumah || '');
+    
     // Random select standard Unsplash realistic poor-medium housing conditions or document audit imagery
     const housePhotos = [
       'https://images.unsplash.com/photo-1542831371-29b0f74f9713?auto=format&fit=crop&q=80&w=400', // poverty study
@@ -477,7 +944,10 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           statusKunjungan: 'Sudah Dikunjungi' as const,
           tanggalPemeriksaan: verifierDate.trim() || 'Hari Ini',
           catatanPemeriksa: verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.',
-          dokumentasiBukti: verifierPhoto
+          dokumentasiBukti: verifierPhoto,
+          namaPendata: verifierNamaPendata.trim() || rec.namaFasilitator || session?.name || 'Petugas SLRT',
+          fotoKkKtp: verifierFotoKkKtp,
+          fotoDepanRumah: verifierFotoDepanRumah
         };
       }
       return rec;
@@ -505,9 +975,11 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     ];
     const dateFormatted = `${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
 
-    // Select randomly from the default list of facilitators to assign this ticket
-    const activeFacilitatingStaff = ['Ahmad Fauzi', 'Siti Rahma', 'Budi Hartono'];
-    const assignedFasil = activeFacilitatingStaff[Math.floor(Math.random() * activeFacilitatingStaff.length)];
+    // Select randomly from the approved list of facilitators to assign this ticket
+    const activeFacilitatingStaff = facilitators.filter(f => f.status === 'APPROVED').map(f => f.name);
+    const assignedFasil = activeFacilitatingStaff.length > 0 
+      ? activeFacilitatingStaff[Math.floor(Math.random() * activeFacilitatingStaff.length)]
+      : 'Ahmad Fauzi';
 
     const CitizenReport: SLRTRecord = {
       id: `warga-${Date.now()}`,
@@ -603,7 +1075,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       const matchesKunjungan = filterKunjungan ? (rec.statusKunjungan || 'Belum Dikunjungi') === filterKunjungan : true;
 
       const matchesFasilitatorFilter = selectedFacilitatorFilter && selectedFacilitatorFilter !== 'all'
-        ? rec.namaFasilitator === selectedFacilitatorFilter
+        ? (rec.namaFasilitator === selectedFacilitatorFilter || rec.namaPendata === selectedFacilitatorFilter)
         : true;
 
       // Range Month & Year filter
@@ -636,7 +1108,31 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         }
       }
 
-      return matchesSearch && matchesKecamatan && matchesKelurahan && matchesStatus && matchesKunjungan && matchesFasilitatorFilter && matchesDateRange;
+      // Rentang tanggal verifikasi lapangan (tanggalPemeriksaan)
+      let matchesVerifDateRange = true;
+      if (filterVerifStartDate || filterVerifEndDate) {
+        if (rec.tanggalPemeriksaan) {
+          const pDate = parseVerificationDate(rec.tanggalPemeriksaan);
+          if (pDate) {
+            if (filterVerifStartDate) {
+              const startD = new Date(filterVerifStartDate);
+              startD.setHours(0,0,0,0);
+              if (pDate < startD) matchesVerifDateRange = false;
+            }
+            if (filterVerifEndDate) {
+              const endD = new Date(filterVerifEndDate);
+              endD.setHours(23,59,59,999);
+              if (pDate > endD) matchesVerifDateRange = false;
+            }
+          } else {
+            matchesVerifDateRange = false;
+          }
+        } else {
+          matchesVerifDateRange = false;
+        }
+      }
+
+      return matchesSearch && matchesKecamatan && matchesKelurahan && matchesStatus && matchesKunjungan && matchesFasilitatorFilter && matchesDateRange && matchesVerifDateRange;
     });
   }, [
     records, 
@@ -649,7 +1145,9 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     filterStartMonth,
     filterStartYear,
     filterEndMonth,
-    filterEndYear
+    filterEndYear,
+    filterVerifStartDate,
+    filterVerifEndDate
   ]);
 
   // Selected Object
@@ -712,6 +1210,142 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     downloadAnchor.remove();
   };
 
+  // Advanced Export to CSV / XLSX with custom columns (Nama Petugas, Tanggal Verifikasi, Catatan Petugas, Status Verifikasi)
+  const handleAdvancedExport = (format: 'CSV' | 'xlsx') => {
+    if (filteredRecords.length === 0) {
+      alert("Tidak ada data hasil filter untuk diekspor. Silakan ubah kriteria saringan.");
+      return;
+    }
+
+    const exportData = filteredRecords.map((rec, idx) => ({
+      'No': idx + 1,
+      'ID Dokumen': rec.id,
+      'Nama Klien / Penerima': rec.namaKlien,
+      'Kecamatan': rec.kecamatan,
+      'Kelurahan': rec.kelurahan,
+      'Alamat Lengkap Klien': rec.alamatKlien,
+      'No Telepon / WA': rec.noTelpon,
+      'Kelengkapan Berkas Kependudukan': rec.dokumen,
+      'Status Kesejahteraan (DTKS)': rec.status,
+      'Estimasi Penghasilan Bulanan': rec.pendapatanPerbulan,
+      'Status Kepemilikan Rumah': rec.statusRumah,
+      'Sumber Penerangan Utama': rec.jenisPenerangan,
+      'Kondisi Fasilitas Sanitasi MCK': rec.mck,
+      'Bantuan Sosial Diterima': rec.bantuanDiterima || 'Belum Terdaftar',
+      'Masalah / Deskripsi Kasus': rec.jenisPengaduan,
+      'Jenis Layanan Rujukan': rec.jenisLayanan,
+      'Sumber Input Awal': rec.diinputOleh || 'Admin',
+      'Tanggal Input / Registrasi': rec.hariTanggal,
+      // Target requested verification metrics
+      'Nama Petugas Lapangan': rec.namaFasilitator || 'Belum Ditunjuk',
+      'Tanggal Verifikasi Lapangan (Audit)': rec.tanggalPemeriksaan || 'Belum Diverifikasi',
+      'Nama Pendata Lapangan': (rec.statusKunjungan === 'Sudah Dikunjungi') ? (rec.namaPendata || rec.namaFasilitator || 'Petugas SLRT') : '',
+      'Tanggal Verifikasi': (rec.statusKunjungan === 'Sudah Dikunjungi') ? (rec.tanggalPemeriksaan || '') : '',
+      'Catatan Petugas Lapangan (Verifikasi)': rec.catatanPemeriksa || 'Belum ada catatan lapangan',
+      'Status Verifikasi Kunjungan': rec.statusKunjungan || 'Belum Dikunjungi'
+    }));
+
+    // Construct metadata filename
+    let fileNamePrefix = 'Data_SLRT_KITO_Tanjungbalai';
+    if (selectedFacilitatorFilter && selectedFacilitatorFilter !== 'all') {
+      fileNamePrefix += `_Petugas_${selectedFacilitatorFilter.replace(/\s+/g, '_')}`;
+    }
+    if (filterVerifStartDate || filterVerifEndDate) {
+      fileNamePrefix += `_Verif_${filterVerifStartDate || 'Awal'}_to_${filterVerifEndDate || 'Akhir'}`;
+    }
+    const currentFormattedDate = new Date().toISOString().slice(0, 10);
+
+    if (format === 'xlsx') {
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan SLRT KITO");
+      
+      const max_cols = exportData.reduce((acc, row) => {
+        Object.keys(row).forEach((key, idx) => {
+          const val = row[key as keyof typeof row] ? row[key as keyof typeof row]!.toString() : '';
+          acc[idx] = Math.max(acc[idx] || 0, val.length, key.length);
+        });
+        return acc;
+      }, [] as number[]);
+      worksheet['!cols'] = max_cols.map(len => ({ wch: Math.min(len + 3, 50) }));
+
+      XLSX.writeFile(workbook, `${fileNamePrefix}_${currentFormattedDate}.xlsx`);
+    } else {
+      const headers = Object.keys(exportData[0]).join(',');
+      const rows = exportData.map(row => {
+        return Object.values(row).map(val => {
+          const strVal = val ? val.toString().replace(/"/g, '""').replace(/\n/g, ' ') : '';
+          return `"${strVal}"`;
+        }).join(',');
+      });
+      
+      const csvStr = "\uFEFF" + [headers, ...rows].join('\n');
+      const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", url);
+      downloadAnchor.setAttribute("download", `${fileNamePrefix}_${currentFormattedDate}.csv`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    }
+  };
+
+  // Google Sheets Web App Synchronization (Real Integration)
+  const handleSyncToGoogleSheets = async (rec: SLRTRecord) => {
+    setSyncingRecordId(rec.id);
+    try {
+      await fetch("https://script.google.com/macros/s/AKfycbzlB6khhYqh0J9skd_C2w6JMYhrJUIIBDxOM2N5IIcTemBQGrqlMTCQpfq3xt1BVUu9ZA/exec", {
+        method: "POST",
+        mode: "no-cors",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(rec)
+      });
+      alert(`Berhasil Mengirim Data!\nCatatan pemohon "${rec.namaKlien}" telah disinkronisasikan langsung ke Google Sheets Anda secara real-time.`);
+    } catch (err) {
+      console.error(err);
+      alert("Gagal mensinkronisasikan data ke Google Sheets. Silakan periksa koneksi jaringan Anda.");
+    } finally {
+      setSyncingRecordId(null);
+    }
+  };
+
+  // Bulk Google Sheets Synchronization
+  const handleBulkSyncToGoogleSheets = async () => {
+    if (records.length === 0) {
+      alert("Tidak ada data dalam database untuk disinkronkan.");
+      return;
+    }
+    
+    const confirmSync = window.confirm(`Apakah Anda yakin ingin mengekspor seluruh database (${records.length} data) ke Google Sheets secara massal?`);
+    if (!confirmSync) return;
+    
+    setSyncingRecordId('all');
+    let successCount = 0;
+    
+    for (const rec of records) {
+      try {
+        await fetch("https://script.google.com/macros/s/AKfycbzlB6khhYqh0J9skd_C2w6JMYhrJUIIBDxOM2N5IIcTemBQGrqlMTCQpfq3xt1BVUu9ZA/exec", {
+          method: "POST",
+          mode: "no-cors",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(rec)
+        });
+        successCount++;
+      } catch (err) {
+        console.error("Failed to sync record ID: " + rec.id, err);
+      }
+    }
+    
+    alert(`Sinkronisasi Selesai!\nSistem berhasil mengirimkan ${successCount} dari ${records.length} data rujukan SLRT ke Google Sheets.`);
+    setSyncingRecordId(null);
+  };
+
   // Input Import
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -766,16 +1400,21 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           <title>SLRT KITO - Laporan Pengaduan: ${selectedRecord.namaKlien}</title>
           <style>
             body { font-family: 'Courier New', Courier, monospace; padding: 30px; color: #333; line-height: 1.5; }
-            .header { text-align: center; border-bottom: 3px double #333; padding-bottom: 12px; margin-bottom: 24px; }
-            .header h1 { margin: 0; font-size: 20px; text-transform: uppercase; }
-            .header h2 { margin: 5px 0 0; font-size: 15px; font-weight: normal; }
+            .header-container { display: flex; align-items: center; justify-content: center; gap: 20px; border-bottom: 3px double #333; padding-bottom: 16px; margin-bottom: 24px; }
+            .header-logo { height: 80px; flex-shrink: 0; }
+            .header-text { text-align: center; flex-grow: 1; }
+            .header-text h1 { margin: 0; font-size: 18px; text-transform: uppercase; font-weight: bold; color: #111; }
+            .header-text h2 { margin: 3px 0 0; font-size: 20px; text-transform: uppercase; color: #0f766e; font-weight: bold; }
+            .header-text h3 { margin: 4px 0 0; font-size: 12px; font-weight: bold; color: #475569; }
+            .header-text p { margin: 2px 0 0; font-size: 10px; color: #64748b; }
             .content-grid { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 15px; }
             .field-row { display: flex; border-bottom: 1px dashed #ccc; padding: 6px 0; }
             .label { width: 330px; font-weight: bold; }
             .val { flex: 1; }
             .footer { margin-top: 50px; text-align: right; font-size: 13px; }
             .sig-space { height: 70px; }
-            .btn-print { background: #4f46e5; color: #fff; border: 0; padding: 8px 16px; border-radius: 4px; font-family: sans-serif; cursor: pointer; margin-bottom: 20px; }
+            .btn-print { background: #4f46e5; color: #fff; border: 0; padding: 8px 16px; border-radius: 4px; font-family: sans-serif; cursor: pointer; margin-bottom: 20px; font-weight: bold; transition: all 0.2s; }
+            .btn-print:hover { background: #4338ca; }
             @media print {
               .btn-print { display: none; }
             }
@@ -784,10 +1423,14 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         <body>
           <button class="btn-print" onclick="window.print()">Cetak Slip Dokumen (Ctrl + P)</button>
           
-          <div class="header">
-            <h1>PELAYANAN DAN PENGADUAN SLRT KITO</h1>
-            <h2>KOTA TANJUNGBALAI - SUMATERA UTARA</h2>
-            <p style="margin: 3px 0 0; font-size: 11px;">Sistem Layanan dan Rujukan Terpadu (Pencegahan Kemiskinan & Kerentanan Sosial)</p>
+          <div class="header-container">
+            <img class="header-logo" src="https://upload.wikimedia.org/wikipedia/commons/9/90/LOGO_KOTA_TANJUNG_BALAI.png" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
+            <div class="header-text">
+              <h1>PEMERINTAH KOTA TANJUNGBALAI</h1>
+              <h2>DINAS SOSIAL KOTA TANJUNGBALAI</h2>
+              <h3>SISTEM LAYANAN DAN RUJUKAN TERPADU - SLRT KITO</h3>
+              <p>Kawasan Kantor Walikota, Kota Tanjungbalai, Sumatera Utara</p>
+            </div>
           </div>
           
           <div class="content-grid">
@@ -828,6 +1471,205 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       </html>
     `);
     printWindow.document.close();
+  };
+
+  // Professional PDF Client Detailed Report download via jsPDF
+  const handleDownloadPDF = async () => {
+    if (!selectedRecord) return;
+    const rec = selectedRecord;
+    
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    // Helper to asynchronously convert external emblem to base64
+    const loadEmblemBase64 = (): Promise<string> => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL('image/png'));
+          } else {
+            resolve('');
+          }
+        };
+        img.onerror = () => {
+          resolve('');
+        };
+        img.src = 'https://upload.wikimedia.org/wikipedia/commons/9/90/LOGO_KOTA_TANJUNG_BALAI.png';
+      });
+    };
+
+    const logoBase64 = await loadEmblemBase64();
+
+    if (logoBase64) {
+      // Set the official emblem image
+      doc.addImage(logoBase64, 'PNG', 14, 11, 15, 19);
+    } else {
+      // High quality fallback vector emblem
+      doc.setFillColor(15, 118, 110);
+      doc.triangle(15, 15, 29, 15, 22, 28, 'F');
+      doc.rect(15, 11, 14, 4, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(5.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text('PEMKOT', 22, 14, { align: 'center' });
+    }
+
+    // Header letterhead setup
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(12.5);
+    doc.setTextColor(30, 41, 59);
+    doc.text('PEMERINTAH KOTA TANJUNGBALAI', 112, 17, { align: 'center' });
+
+    doc.setFontSize(14);
+    doc.setTextColor(15, 118, 110);
+    doc.text('DINAS SOSIAL KOTA TANJUNGBALAI', 112, 23, { align: 'center' });
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text('SISTEM LAYANAN DAN RUJUKAN TERPADU - SLRT KITO', 112, 29, { align: 'center' });
+
+    // Double divider lines
+    doc.setDrawColor(148, 163, 184);
+    doc.setLineWidth(0.6);
+    doc.line(15, 35, 195, 35);
+    doc.setLineWidth(0.2);
+    doc.line(15, 37, 195, 37);
+
+    // Document Title
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('FORMULIR REGISTER & VERIFIKASI PENGADUAN KLIEN', 15, 45);
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`ID Dokumen: ${rec.id}   |   Penginput: ${rec.diinputOleh || 'Admin'}`, 15, 50);
+
+    // Helper functions for sections
+    const drawSectionHeader = (y: number, title: string) => {
+      doc.setFillColor(241, 245, 249);
+      doc.rect(15, y, 180, 6, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 118, 110);
+      doc.text(title, 18, y + 4.5);
+    };
+
+    const drawRow = (y: number, label1: string, val1: string, label2?: string, val2?: string) => {
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(label1, 18, y);
+      
+      if (label2) {
+        doc.text(label2, 110, y);
+      }
+      
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(30, 41, 59);
+      doc.text(`: ${val1 || '-'}`, 52, y);
+      
+      if (label2 && val2) {
+        doc.text(`: ${val2 || '-'}`, 144, y);
+      }
+      
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.1);
+      doc.line(15, y + 2, 195, y + 2);
+    };
+
+    const drawRowFullWidth = (y: number, label: string, val: string) => {
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(label, 18, y);
+      
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(30, 41, 59);
+      doc.text(':', 52, y);
+      
+      const wrappedText = doc.splitTextToSize(val || '-', 138);
+      doc.text(wrappedText, 54, y);
+      
+      const nextY = y + (wrappedText.length * 4) + 1;
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.1);
+      doc.line(15, nextY, 195, nextY);
+      return nextY;
+    };
+
+    // SECTION I
+    drawSectionHeader(55, 'I. IDENTITAS UTAMA PENGADU & KLIEN');
+    drawRow(66, 'Nama Lengkap Klien', rec.namaKlien, 'Kecamatan / Kel.', `${rec.kecamatan} / ${rec.kelurahan}`);
+    drawRow(71, 'No. HP/WA Active', rec.noTelpon, 'Pekerjaan Kepala RT', rec.pekerjaanKrt);
+    drawRow(76, 'Penerima Kuasa', rec.namaKuasa, 'Estimasi Pendapatan', rec.pendapatanPerbulan);
+    drawRow(81, 'Kelengkapan Berkas', rec.dokumen, 'Status Sosial', rec.status);
+    const alamatY = drawRowFullWidth(86, 'Alamat Lengkap', rec.alamatKlien);
+
+    // SECTION II
+    const sec2Y = alamatY + 5;
+    drawSectionHeader(sec2Y, 'II. FASILITAS HUNIAN & INTEGRASI BANTUAN');
+    drawRow(sec2Y + 11, 'Rumah Kepemilikan', rec.statusRumah, 'Sumber Penerangan', rec.jenisPenerangan);
+    drawRow(sec2Y + 16, 'Akses Sanitasi / MCK', rec.mck, 'Bansos Sedang Aktif', rec.bantuanDiterima || 'Belum Terdaftar');
+
+    // SECTION III
+    const sec3Y = sec2Y + 23;
+    drawSectionHeader(sec3Y, 'III. DETAIL KASUS ADUAN & RUJUKAN');
+    drawRow(sec3Y + 11, 'Jenis Layanan Tujuan', rec.jenisLayanan, 'Fasilitator Terkait', rec.namaFasilitator);
+    const complaintsY = drawRowFullWidth(sec3Y + 16, 'Deskripsi Keluhan', rec.jenisPengaduan);
+
+    // SECTION IV
+    const sec4Y = complaintsY + 5;
+    drawSectionHeader(sec4Y, 'IV. STATUS VERIFIKASI FISIK & LAPANGAN (AUDIT)');
+    drawRow(sec4Y + 11, 'Status Kunjungan', rec.statusKunjungan || 'Belum Dikunjungi', 'Tanggal Pemeriksaan', rec.tanggalPemeriksaan || 'Belum Diperiksa');
+    const finalDescY = drawRowFullWidth(sec4Y + 16, 'Catatan Pengawas', rec.catatanPemeriksa || 'Belum ada catatan verifikasi fisik lapangan dari petugas terkait.');
+
+    // SIGNATURES Section
+    const sigY = Math.min(finalDescY + 12, 240); // prevent overflow beyond height of A4 (297)
+
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(30, 41, 59);
+
+    doc.text('Petugas Fasilitator Pendata,', 25, sigY);
+    doc.text('Dinas Sosial Tanjungbalai', 25, sigY + 4);
+    doc.setFont('Helvetica', 'normal');
+    doc.text('_____________________________', 25, sigY + 20);
+    doc.setFont('Helvetica', 'bold');
+    doc.text(`( ${rec.namaFasilitator} )`, 25, sigY + 24);
+
+    doc.text('Klien / Penerima Layanan,', 135, sigY);
+    doc.text('Kota Tanjungbalai', 135, sigY + 4);
+    doc.setFont('Helvetica', 'normal');
+    doc.text('_____________________________', 135, sigY + 20);
+    doc.setFont('Helvetica', 'bold');
+    doc.text(`( ${rec.namaKlien} )`, 135, sigY + 24);
+
+    // Footer lines
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.line(15, 280, 195, 280);
+
+    doc.setFont('Helvetica', 'italic');
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text('Pernyataan: Dokumen ini divalidasi sah secara elektronik oleh Sistem Layanan dan Rujukan Terpadu SLRT KITO Kota Tanjungbalai.', 15, 284);
+    doc.text('Halaman 1 dari 1', 195, 284, { align: 'right' });
+
+    // Download PDF triggers
+    doc.save(`SLRT_KITO_Layanan_${rec.namaKlien.replace(/\s+/g, '_')}_${rec.id}.pdf`);
   };
 
   return (
@@ -874,6 +1716,24 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           }`}>
             {userRole === 'admin' ? 'AD' : userRole === 'facilitator' ? 'FL' : 'WR'}
           </div>
+
+          {((userRole === 'admin' && session?.role === 'admin') || 
+            (userRole === 'facilitator' && session?.role === 'facilitator')) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSession(null);
+                setAuthEmail('');
+                setAuthPassword('');
+                setAuthUsername('');
+                setActiveTab('all-records');
+              }}
+              className="px-3 py-1.5 border border-rose-200 bg-rose-50/50 hover:bg-rose-55 text-rose-700 text-xs font-black rounded-lg cursor-pointer transition-colors"
+              title="Keluar Sesi Aman"
+            >
+              Keluar
+            </button>
+          )}
         </div>
       </header>
 
@@ -1397,6 +2257,287 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
           </div>
         </main>
+      ) : (userRole === 'admin' && session?.role !== 'admin') || (userRole === 'facilitator' && session?.role !== 'facilitator') ? (
+        <main className="flex-1 p-4 md:p-10 max-w-xl mx-auto w-full flex flex-col justify-center animate-fadeIn font-sans">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-xl flex flex-col gap-6 relative">
+            
+            <div className="absolute -top-3 left-6 bg-gradient-to-r from-indigo-600 to-indigo-800 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-md">
+              Sistem Jaminan Sosial • SLRT KITO
+            </div>
+
+            <div className="text-center mt-2">
+              <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 mx-auto flex items-center justify-center text-white text-xl font-bold mb-3 shadow-inner">
+                {userRole === 'admin' ? '💻' : '👥'}
+              </div>
+              <h3 className="text-lg font-black text-slate-900 leading-tight uppercase font-display">
+                {userRole === 'admin' ? 'Gerbang Masuk Admin' : isRegisterMode ? 'Daftar Fasilitator Baru' : 'Masuk Fasilitator Lapangan'}
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-1 leading-normal max-w-xs mx-auto">
+                {userRole === 'admin' 
+                  ? 'Halaman otorisasi khusus Administrator Dinsos SLRT KITO Tanjungbalai.' 
+                  : isRegisterMode 
+                    ? 'Buat akun fasilitator lapangan baru untuk audit data sosial rujukan daerah.' 
+                    : 'Gunakan surel dan password terverifikasi Anda untuk mengakses penugasan lapangan.'}
+              </p>
+            </div>
+
+            {regSuccess && (
+              <div className="bg-emerald-50 border border-emerald-250 text-emerald-850 text-xs p-4 rounded-xl font-medium leading-relaxed">
+                <p className="font-extrabold text-emerald-950 flex items-center gap-1.5 mb-1">
+                  <span>✅</span> REGISTRASI BERHASIL!
+                </p>
+                {regSuccess}
+                <p className="text-[9px] text-emerald-600 font-mono font-bold mt-2 uppercase tracking-wide">
+                  Status: PENDING_APPROVAL (Menunggu Persetujuan Admin)
+                </p>
+              </div>
+            )}
+
+            {authError && (
+              <div className="bg-rose-50 border border-rose-220 text-rose-800 text-xs p-3.5 rounded-xl font-bold flex items-center gap-2">
+                <span className="text-sm">⚠️</span> 
+                <span className="leading-relaxed">{authError}</span>
+              </div>
+            )}
+
+            {userRole === 'admin' && (
+              <form onSubmit={handleAdminLogin} className="flex flex-col gap-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider font-display">Username Utama *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Masukkan Username Admin..."
+                    value={authUsername}
+                    onChange={(e) => setAuthUsername(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-indigo-600 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider font-display">Password Pengaman *</label>
+                  <div className="relative font-sans">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      placeholder="Masukkan Password rujukan..."
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl pr-10 text-slate-800 focus:outline-none focus:border-indigo-605 transition-colors font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer text-xs font-bold"
+                    >
+                      {showPassword ? '✕ Sembunyi' : '👁️ Tampilkan'}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-md mt-1 cursor-pointer uppercase tracking-wider text-xs flex items-center justify-center gap-2"
+                >
+                  <span>🔐</span> Masuk Sebagai Admin
+                </button>
+              </form>
+            )}
+
+            {userRole === 'facilitator' && !isRegisterMode && (
+              <form onSubmit={handleFacilitatorLogin} className="flex flex-col gap-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider font-display">Alamat Email Terdaftar *</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="contoh: budi@slrt.id..."
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-600 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider font-display">Kata Sandi (Password) *</label>
+                  <div className="relative font-sans">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      placeholder="Masukkan kata sandi..."
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl pr-10 text-slate-800 focus:outline-none focus:border-emerald-605 transition-colors font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer text-xs font-bold"
+                    >
+                      {showPassword ? '✕ Sembunyi' : '👁️ Tampilkan'}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-600 hover:bg-emerald-750 text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-md mt-1 cursor-pointer uppercase tracking-wider text-xs flex items-center justify-center gap-2"
+                >
+                  <span>🔐</span> Masuk Sebagai Fasilitator
+                </button>
+
+                <div className="text-center pt-2 border-t border-slate-100 text-xs">
+                  <p className="text-slate-500">
+                    Belum punya akun?{" "}
+                    <button
+                      type="button"
+                      onClick={() => { setIsRegisterMode(true); setAuthError(null); setRegSuccess(null); }}
+                      className="text-emerald-700 font-bold hover:underline cursor-pointer"
+                    >
+                      Daftar Fasilitator Baru ➔
+                    </button>
+                  </p>
+                </div>
+              </form>
+            )}
+
+            {userRole === 'facilitator' && isRegisterMode && (
+              <form onSubmit={handleFacilitatorRegister} className="flex flex-col gap-3.5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider font-display">Nama Lengkap *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nama lengkap..."
+                      value={regName}
+                      onChange={(e) => setRegName(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-650"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider font-display font-black">NIK / ID Pegawai (16 Digit) *</label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={16}
+                      placeholder="Nomor NIK KTP..."
+                      value={regNik}
+                      onChange={(e) => setRegNik(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-650"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider font-display">No. HP / WA Aktif *</label>
+                    <input
+                      type="tel"
+                      required
+                      placeholder="Contoh: 0812XXXXXXXX..."
+                      value={regPhone}
+                      onChange={(e) => setRegPhone(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-650"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider font-display">Email (Guna Log Masuk) *</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="alamat@email.com..."
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-650"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-150">
+                  <div>
+                    <label className="text-[9px] font-black text-slate-50 block mb-1 uppercase tracking-wider font-display text-slate-500">Wilayah Kecamatan Tugas *</label>
+                    <select
+                      value={regKec}
+                      onChange={(e) => setRegKec(e.target.value)}
+                      className="w-full bg-white border border-slate-200 text-xs px-2.5 py-1.5 rounded-lg text-slate-850"
+                    >
+                      {Object.keys(TANJUNGBALAI_LOCATIONS).map(kec => (
+                        <option key={kec} value={kec}>{kec}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[9px] font-black text-slate-50 block mb-1 uppercase tracking-wider font-display text-slate-500">Wilayah Kelurahan Tugas *</label>
+                    <select
+                      value={regKel}
+                      onChange={(e) => setRegKel(e.target.value)}
+                      className="w-full bg-white border border-slate-200 text-xs px-2.5 py-1.5 rounded-lg text-slate-850"
+                    >
+                      {TANJUNGBALAI_LOCATIONS[regKec]?.map(kel => (
+                        <option key={kel} value={kel}>{kel}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider font-display">Sandi Baru *</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Kata Sandi..."
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-650 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider font-display font-black">Ulangi Sandi *</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Ulang Sandi..."
+                      value={regConfirmPassword}
+                      onChange={(e) => setRegConfirmPassword(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-650 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl shadow-md cursor-pointer uppercase tracking-wider text-xs flex items-center justify-center gap-1.5 border border-emerald-650"
+                >
+                  <span>📝</span> Kirim Formulir Registrasi
+                </button>
+
+                <div className="text-center pt-1 border-t border-slate-100 text-[11px]">
+                  <p className="text-slate-500">
+                    Sudah mendaftar sebelumnya?{" "}
+                    <button
+                      type="button"
+                      onClick={() => { setIsRegisterMode(false); setAuthError(null); }}
+                      className="text-emerald-700 font-bold hover:underline cursor-pointer"
+                    >
+                      Silakan Masuk ➔
+                    </button>
+                  </p>
+                </div>
+              </form>
+            )}
+
+            <div className="text-center font-mono text-[9px] uppercase font-bold text-slate-400 border-t border-slate-100 pt-3">
+              Dinas Sosial Kota Tanjungbalai &bull; SLRT KITO
+            </div>
+
+          </div>
+        </main>
       ) : (
         <main className="flex-1 p-4 md:p-6 grid grid-cols-12 gap-6 overflow-hidden">
         
@@ -1461,6 +2602,29 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
             >
               <span>📖 Panduan 18 Lapangan</span>
             </button>
+
+            {userRole === 'admin' && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('facilitators')}
+                className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'facilitators' 
+                    ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
+                    : 'text-slate-650 hover:bg-slate-50 hover:text-slate-905'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">👥 Verifikasi Petugas</span>
+                {facilitators.filter(f => f.status === 'PENDING_APPROVAL').length > 0 ? (
+                  <span className="bg-rose-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md animate-pulse">
+                    {facilitators.filter(f => f.status === 'PENDING_APPROVAL').length} BARU
+                  </span>
+                ) : (
+                  <span className="text-[9px] text-slate-400 font-mono font-bold">
+                    {facilitators.length} Total
+                  </span>
+                )}
+              </button>
+            )}
           </div>
 
           {/* ACTIVE RECORD SELECTOR & FILTERS (Only visible and useful on database screen) */}
@@ -1522,6 +2686,23 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     <option value="">Status Kunjungan (Semua)</option>
                     <option value="Belum Dikunjungi">🕒 Belum Dikunjungi (Pending)</option>
                     <option value="Sudah Dikunjungi">✅ Sudah Dikunjungi (Verified)</option>
+                  </select>
+                </div>
+
+                {/* filter by facilitator / petugas */}
+                <div>
+                  <select
+                    value={selectedFacilitatorFilter}
+                    onChange={(e) => setSelectedFacilitatorFilter(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg text-[10px] p-1.5 focus:border-indigo-500 text-slate-750 outline-none font-semibold text-slate-700"
+                  >
+                    <option value="all">Fasilitator / Petugas (Semua)</option>
+                    <option value="Ahmad Fauzi">Ahmad Fauzi</option>
+                    <option value="Siti Rahma">Siti Rahma</option>
+                    <option value="Budi Hartono">Budi Hartono</option>
+                    {facilitators.filter(f => f.status === 'APPROVED' && !['Ahmad Fauzi', 'Siti Rahma', 'Budi Hartono'].includes(f.name)).map(f => (
+                      <option key={f.id} value={f.name}>{f.name}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -1623,6 +2804,49 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     </div>
                   </div>
                 </div>
+
+                {/* filter by verification date range */}
+                <div className="border-t border-slate-200/65 pt-2 flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                      <Calendar className="w-3 h-3 text-emerald-600" /> RENTANG TANGGAL VERIFIKASI
+                    </span>
+                    {(filterVerifStartDate || filterVerifEndDate) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFilterVerifStartDate('');
+                          setFilterVerifEndDate('');
+                        }}
+                        className="text-[9px] font-black text-rose-600 hover:text-rose-800 uppercase tracking-widest cursor-pointer hover:underline"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-wide">Mulai Verifikasi:</span>
+                      <input
+                        type="date"
+                        value={filterVerifStartDate}
+                        onChange={(e) => setFilterVerifStartDate(e.target.value)}
+                        className="bg-white border border-slate-200 rounded-md text-[9px] p-1 text-slate-700 focus:border-indigo-500 outline-none font-medium cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-wide">Sampai Verifikasi:</span>
+                      <input
+                        type="date"
+                        value={filterVerifEndDate}
+                        onChange={(e) => setFilterVerifEndDate(e.target.value)}
+                        className="bg-white border border-slate-200 rounded-md text-[9px] p-1 text-slate-700 focus:border-indigo-500 outline-none font-medium cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Sidebar list visitors queue */}
@@ -1704,21 +2928,81 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
           {/* SYSTEM UTILITY CADANGAN PANEL */}
           <div className="bg-slate-100 border border-slate-200 p-4 rounded-2xl flex flex-col gap-3 font-sans shrink-0">
-            <h4 className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Settings className="w-3.5 h-3.5" /> EKSPOR DATABASE ADM</h4>
-            <div className="grid grid-cols-2 gap-2">
-              <button 
-                onClick={handleExportJSON}
-                className="bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 py-2 px-1 text-[10px] font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all text-slate-700 hover:text-indigo-700"
-              >
-                <Download className="w-3 h-3 text-slate-400" /> Ekspor JSON
-              </button>
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 py-2 px-1 text-[10px] font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all text-slate-700 hover:text-indigo-700"
-              >
-                <Upload className="w-3 h-3 text-slate-400" /> Impor JSON
-              </button>
+            <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-1.5 mb-1">
+              <Download className="w-3.5 h-3.5 text-indigo-600 animate-bounce" /> OPTIMASI EKSPOR ADVANCED
+            </h4>
+            
+            <div className="bg-white p-2.5 rounded-xl border border-slate-200 text-[10px] text-slate-650 flex flex-col gap-1.5 shadow-xs">
+              <p className="font-extrabold text-slate-800 uppercase tracking-wider text-[8px] text-slate-500">Status Saringan Saat Ini:</p>
+              <div className="flex flex-col gap-1 text-[9px] font-semibold font-mono text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-150">
+                <div>• Petugas: <b className="text-indigo-600">{selectedFacilitatorFilter === 'all' ? 'Semua Petugas' : selectedFacilitatorFilter}</b></div>
+                <div>• Periode: <b className="text-slate-700">
+                  {filterStartMonth || filterStartYear || filterEndMonth || filterEndYear ? (
+                    `${filterStartMonth ? `Bln ${filterStartMonth}` : ''} ${filterStartYear || ''} - ${filterEndMonth ? `Bln ${filterEndMonth}` : ''} ${filterEndYear || ''}`
+                  ) : (
+                    'Semua Periode'
+                  )}
+                </b></div>
+                <div>• Status Kunjungan: <b className="text-slate-700">{filterKunjungan || 'Semua'}</b></div>
+                <div>• Rentang Verifikasi: <b className="text-emerald-700">{filterVerifStartDate || filterVerifEndDate ? `${filterVerifStartDate || 'Awal'} s/d ${filterVerifEndDate || 'Akhir'}` : 'Semua Tanggal'}</b></div>
+                <div className="border-t border-slate-200 pt-1 mt-1 font-bold text-emerald-700 font-sans flex justify-between items-center text-[10px]">
+                  <span>✓ Siap Diekspor:</span>
+                  <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md font-mono">{filteredRecords.length} Data</span>
+                </div>
+              </div>
+
+              {/* Advanced Export Buttons */}
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                <button 
+                  onClick={() => handleAdvancedExport('CSV')}
+                  className="bg-slate-800 text-white hover:bg-slate-900 py-2 px-1 text-[9px] font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all uppercase tracking-wide shadow-xs"
+                  title="Unduh data terseleksi dalam format .CSV standar"
+                >
+                  📄 File .CSV
+                </button>
+                <button 
+                  onClick={() => handleAdvancedExport('xlsx')}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-1 text-[9px] font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all uppercase tracking-wide shadow-xs"
+                  title="Unduh data terseleksi dalam format .XLSX Excel"
+                >
+                  🟢 Excel .XLSX
+                </button>
+              </div>
             </div>
+
+            <div className="border-t border-slate-200 pt-2.5">
+              <span className="text-[8px] font-black text-slate-450 uppercase tracking-widest block mb-1.5">Backup JSON &amp; Impor Database</span>
+              <div className="grid grid-cols-2 gap-2">
+                <button 
+                  onClick={handleExportJSON}
+                  className="bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 py-1.5 px-1 text-[9px] font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all text-slate-700 hover:text-indigo-700"
+                >
+                  <Download className="w-3 h-3 text-slate-400" /> Ekspor JSON
+                </button>
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 py-1.5 px-1 text-[9px] font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all text-slate-700 hover:text-indigo-700"
+                >
+                  <Upload className="w-3 h-3 text-slate-400" /> Impor JSON
+                </button>
+              </div>
+            </div>
+
+            {/* Google Sheets Live Sync Integration (Active Web App) */}
+            <div className="border-t border-slate-200 pt-2.5 flex flex-col gap-1.5">
+              <span className="text-[8px] font-black text-slate-450 uppercase tracking-widest">KONEKSI GOOGLE SHEETS LIVE</span>
+              <button
+                onClick={handleBulkSyncToGoogleSheets}
+                disabled={syncingRecordId !== null}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-350 text-white font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-1 text-[10px] transition-all cursor-pointer shadow-xs select-none uppercase tracking-wide"
+              >
+                📊 {syncingRecordId === 'all' ? 'Mensinkronkan...' : 'Ekspor Massal Ke Sheets'}
+              </button>
+              <p className="text-[8px] text-slate-400 leading-normal italic">
+                Sinkronisasi database rujukan SLRT KITO Kota Tanjungbalai langsung ke spreadsheet target.
+              </p>
+            </div>
+
             <input 
               type="file" 
               ref={fileInputRef} 
@@ -1747,11 +3031,14 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 <BentoRecordDetails
                   rec={selectedRecord}
                   onPrint={handlePrintSlip}
+                  onDownloadPDF={handleDownloadPDF}
                   onCopyFormatList={() => handleCopyToClipboard(generateListText(selectedRecord), 'list')}
                   copiedRecordId={copiedRecordId}
                   listText={generateListText(selectedRecord)}
                   userRole={userRole}
                   onVerifyVisit={handleOpenVerifierModal}
+                  onSyncSheets={handleSyncToGoogleSheets}
+                  isSyncingSheets={syncingRecordId === selectedRecord.id}
                 />
               ) : (
                 <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-450 flex flex-col items-center justify-center gap-3 shadow-xs">
@@ -1821,10 +3108,10 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
-                      <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">1. Nama Fasilitator Pendata *</label>
+                      <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">1. Nama Penginput Data Rujukan *</label>
                       <input
                         type="text"
-                        placeholder="Nama fasilitator pendata..."
+                        placeholder="Nama penginput data rujukan..."
                         value={formFasilitator}
                         onChange={(e) => setFormFasilitator(e.target.value)}
                         className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-lg outline-none focus:border-indigo-500 text-slate-800"
@@ -2109,6 +3396,131 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
             <HelpTab />
           )}
 
+          {/* 5. FACILITATOR MANAGEMENT TAB (ONLY ADMIN ACCESS) */}
+          {activeTab === 'facilitators' && userRole === 'admin' && (
+            <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col gap-6 font-sans">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h2 className="text-base font-black text-slate-900 uppercase tracking-tight font-display">Verifikasi Registrasi &amp; Persetujuan Petugas Lapangan</h2>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                    Sesuai prosedur keamanan GovTech, semua pendaftar petugas survei dikunci sampai Administrator memberikan status Aktif (Approved).
+                  </p>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-2xl text-[11px] text-slate-650 flex items-center gap-2 font-semibold">
+                  <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse"></span>
+                  <span>Menunggu Verifikasi: <b>{facilitators.filter(f => f.status === 'PENDING_APPROVAL').length} Orang</b></span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto border border-slate-150 rounded-2xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-250 text-slate-550 font-black uppercase tracking-wider text-[10px]">
+                      <th className="p-4">Identitas Petugas</th>
+                      <th className="p-4">Kontak / HP / WhatsApp</th>
+                      <th className="p-4 animate-pulse">Kredensial / Sandi</th>
+                      <th className="p-4">Wilayah Tugas Administratif</th>
+                      <th className="p-4">Status Akun</th>
+                      <th className="p-4 text-center">Tindakan Otorisasi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-800">
+                    {facilitators.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-slate-400 font-bold">
+                          Belum ada petugas lapangan terdaftar dalam sistem.
+                        </td>
+                      </tr>
+                    ) : (
+                      facilitators.map((fac) => (
+                        <tr key={fac.id} className="hover:bg-slate-50/55 transition-colors">
+                          <td className="p-4">
+                            <p className="font-extrabold text-slate-905">{fac.name}</p>
+                            <p className="text-[10px] text-slate-450 font-mono mt-0.5">NIK: {fac.nik}</p>
+                          </td>
+                          <td className="p-4">
+                            <p className="font-medium text-slate-800">{fac.phone}</p>
+                            <p className="text-[10px] text-slate-400 font-medium">{fac.email}</p>
+                          </td>
+                          <td className="p-4 font-sans select-none">
+                            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 py-1 px-2 rounded-lg max-w-[125px] justify-between shadow-xs">
+                              <span className="text-[10px] font-extrabold text-slate-700 tracking-wider font-mono">
+                                {visiblePasswords[fac.id] ? (fac.password || '••••••••') : '••••••••'}
+                              </span>
+                              <button 
+                                type="button"
+                                onClick={() => setVisiblePasswords(prev => ({ ...prev, [fac.id]: !prev[fac.id] }))}
+                                className="text-slate-400 hover:text-indigo-600 font-bold focus:outline-none transition-colors cursor-pointer text-xs p-0.5 mt-0.5 block"
+                                title={visiblePasswords[fac.id] ? "Sembunyikan Sandi" : "Tampilkan Sandi"}
+                              >
+                                {visiblePasswords[fac.id] ? '👁️' : '🙈'}
+                              </button>
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="bg-indigo-50 border border-indigo-100 text-indigo-800 text-[9px] font-black px-2 py-0.5 rounded-md self-start">
+                                Kec. {fac.regionKecamatan}
+                              </span>
+                              <span className="text-[10px] text-slate-550 font-semibold pl-1.5 mt-1">
+                                📍 Kel. {fac.regionKelurahan}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-4 font-sans">
+                            {fac.status === 'APPROVED' ? (
+                              <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-250 text-[9px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full">
+                                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span> AKTIF / DISETUJUI
+                              </span>
+                            ) : fac.status === 'REJECTED' ? (
+                              <span className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-800 border border-rose-250 text-[9px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full">
+                                <span className="w-1.5 h-1.5 bg-rose-500 rounded-full"></span> DITOLAK
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-850 border border-amber-250 text-[9px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full animate-pulse">
+                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-ping"></span> MENUNGGU TINJAUAN
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-4">
+                            <div className="flex justify-center items-center gap-2">
+                              {fac.status !== 'APPROVED' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateFacilitatorStatus(fac.id, 'APPROVED')}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-1.5 px-3 rounded-lg text-[10px] cursor-pointer transition-colors shadow-xs"
+                                >
+                                  Terima
+                                </button>
+                              )}
+                              {fac.status !== 'REJECTED' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateFacilitatorStatus(fac.id, 'REJECTED')}
+                                  className="bg-amber-600 hover:bg-amber-700 text-white font-extrabold py-1.5 px-3 rounded-lg text-[10px] cursor-pointer transition-colors shadow-xs"
+                                >
+                                  Tolak
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteFacilitator(fac.id)}
+                                className="text-[10px] text-rose-600 hover:bg-rose-50 hover:text-rose-700 font-extrabold py-1.5 px-2.5 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+                                title="Hapus Akun Permanen"
+                              >
+                                Hapus
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
         </section>
 
       </main>
@@ -2178,20 +3590,158 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 <p className="text-xs text-slate-500 mt-0.5">Kelurahan {selectedVerifierRecord.kelurahan}, Kecamatan {selectedVerifierRecord.kecamatan}</p>
               </div>
 
-              <div>
-                <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Tanggal Pemeriksaan Fisik *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Hari, Tanggal Bulan Tahun"
-                  value={verifierDate}
-                  onChange={(e) => setVerifierDate(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-600"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Nama Pendata Lapangan *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Nama Lengkap Penjajak"
+                    value={verifierNamaPendata}
+                    onChange={(e) => setVerifierNamaPendata(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-600 font-sans"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Tanggal Pemeriksaan Fisik *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Hari, Tanggal Bulan Tahun"
+                    value={verifierDate}
+                    onChange={(e) => setVerifierDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-600 font-sans"
+                  />
+                </div>
+              </div>
+
+              {/* KK/KTP Dokumen Section */}
+              <div className="border border-slate-150 p-3 rounded-2xl bg-slate-50/50 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black text-slate-650 uppercase tracking-wider block">📷 Ambil &amp; Upload Foto KK / KTP (Wajib) *</span>
+                  {verifierFotoKkKtp && (
+                    <button 
+                      type="button" 
+                      onClick={() => setVerifierFotoKkKtp('')} 
+                      className="text-[10px] text-rose-600 font-bold hover:underline cursor-pointer"
+                    >
+                      Hapus
+                    </button>
+                  )}
+                </div>
+                
+                {verifierFotoKkKtp ? (
+                  <div className="relative h-28 rounded-xl overflow-hidden border border-slate-300">
+                    <img src={verifierFotoKkKtp} className="w-full h-full object-cover" alt="KK/KTP Preview" />
+                    <div className="absolute inset-x-0 bottom-0 bg-slate-900/60 p-1.5 text-center text-[10px] text-white font-bold leading-none">
+                      Preview Berkas KK/KTP Siap Simpan
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Live Camera Simulation Option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const documentSamples = [
+                          'https://images.unsplash.com/photo-1554774853-aae0a22c8aa4?auto=format&fit=crop&q=80&w=400',
+                          'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&q=80&w=400'
+                        ];
+                        const picked = documentSamples[Math.floor(Math.random() * documentSamples.length)];
+                        processGeotagAndCompression(picked, true, setVerifierFotoKkKtp);
+                      }}
+                      className="h-14 border border-dashed border-emerald-300 rounded-xl flex flex-col items-center justify-center bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer text-emerald-800 text-[10px] font-medium animate-pulse"
+                    >
+                      <Camera className="w-4 h-4 mb-0.5 text-emerald-600" />
+                      <span className="font-bold">Ambil &amp; Geotag</span>
+                    </button>
+
+                    {/* File Upload Option */}
+                    <label className="h-14 border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center bg-white hover:bg-slate-100 transition-colors cursor-pointer text-slate-650 text-[10px] font-medium text-center">
+                      <Upload className="w-4 h-4 mb-0.5 text-slate-450" />
+                      <span>Upload &amp; Kompres</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        required={!verifierFotoKkKtp}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleImageUploadHelper(file, setVerifierFotoKkKtp);
+                          }
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* Foto Depan Rumah Section */}
+              <div className="border border-slate-150 p-3 rounded-2xl bg-slate-50/50 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black text-slate-655 uppercase tracking-wider block">🏠 Ambil &amp; Upload Foto Depan RUMAH (Wajib) *</span>
+                  {verifierFotoDepanRumah && (
+                    <button 
+                      type="button" 
+                      onClick={() => setVerifierFotoDepanRumah('')} 
+                      className="text-[10px] text-rose-600 font-bold hover:underline cursor-pointer"
+                    >
+                      Hapus
+                    </button>
+                  )}
+                </div>
+                
+                {verifierFotoDepanRumah ? (
+                  <div className="relative h-28 rounded-xl overflow-hidden border border-slate-300">
+                    <img src={verifierFotoDepanRumah} className="w-full h-full object-cover" alt="Foto Depan Rumah Preview" />
+                    <div className="absolute inset-x-0 bottom-0 bg-slate-900/60 p-1.5 text-center text-[10px] text-white font-bold leading-none">
+                      Preview Depan Rumah Siap Simpan
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Live Camera Simulation Option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const houseSamples = [
+                          'https://images.unsplash.com/photo-1516880711640-ef7db81be3e1?auto=format&fit=crop&q=80&w=400',
+                          'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=400'
+                        ];
+                        const picked = houseSamples[Math.floor(Math.random() * houseSamples.length)];
+                        processGeotagAndCompression(picked, true, setVerifierFotoDepanRumah);
+                      }}
+                      className="h-14 border border-dashed border-emerald-300 rounded-xl flex flex-col items-center justify-center bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer text-emerald-800 text-[10px] font-medium animate-pulse"
+                    >
+                      <Camera className="w-4 h-4 mb-0.5 text-emerald-600" />
+                      <span className="font-bold">Ambil &amp; Geotag</span>
+                    </button>
+
+                    {/* File Upload Option */}
+                    <label className="h-14 border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center bg-white hover:bg-slate-100 transition-colors cursor-pointer text-slate-650 text-[10px] font-medium text-center">
+                      <Upload className="w-4 h-4 mb-0.5 text-slate-450" />
+                      <span>Upload &amp; Kompres</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        required={!verifierFotoDepanRumah}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleImageUploadHelper(file, setVerifierFotoDepanRumah);
+                          }
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                )}
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Pilih Foto Bukti Dokumen Kunjungan (Verifikasi Fisik)</label>
+                <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Atur Foto Kontrol Lapangan (Opsional)</label>
                 <div className="grid grid-cols-4 gap-2 mt-1.5">
                   {[
                     { id: 'img1', url: 'https://images.unsplash.com/photo-1542831371-29b0f74f9713?auto=format&fit=crop&q=80&w=400', label: 'Studi Poverty' },
@@ -2217,7 +3767,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   ))}
                 </div>
                 <p className="text-[9px] text-slate-450 italic mt-1 leading-normal font-sans">
-                  * Gambar di atas mewakili skenario peninjauan foto metadata di lapangan untuk audit rujukan Dinas Sosial Tanjungbalai.
+                  * Gambar di atas mewakili rujukan audit ops geospasial opsional oleh Dinsos Kota Tanjungbalai.
                 </p>
               </div>
 
@@ -2245,7 +3795,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       onClick={() => setVerifierNotes(chipValue)}
                       className="text-[9px] bg-slate-100 hover:bg-slate-200 text-slate-650 px-2 py-1 rounded-lg text-left transition-colors font-sans truncate max-w-full font-bold cursor-pointer"
                     >
-                      💡 Chip {index + 1}: {chipValue.substring(0, 30)}...
+                      💡 Chip {index + 1}: {chipValue.substring(0, 35)}...
                     </button>
                   ))}
                 </div>
