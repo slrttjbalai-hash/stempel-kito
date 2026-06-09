@@ -2694,9 +2694,9 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   <select
                     value={selectedFacilitatorFilter}
                     onChange={(e) => setSelectedFacilitatorFilter(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg text-[10px] p-1.5 focus:border-indigo-500 text-slate-750 outline-none font-semibold text-slate-700"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg text-[10px] p-1.5 focus:border-indigo-500 text-slate-755 outline-none font-semibold text-slate-700 hover:border-slate-300 transition-colors"
                   >
-                    <option value="all">Fasilitator / Petugas (Semua)</option>
+                    <option value="all">Saring Berdasarkan Petugas Penginput &amp; Pendata (Semua)</option>
                     <option value="Ahmad Fauzi">Ahmad Fauzi</option>
                     <option value="Siti Rahma">Siti Rahma</option>
                     <option value="Budi Hartono">Budi Hartono</option>
@@ -2935,7 +2935,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
             <div className="bg-white p-2.5 rounded-xl border border-slate-200 text-[10px] text-slate-650 flex flex-col gap-1.5 shadow-xs">
               <p className="font-extrabold text-slate-800 uppercase tracking-wider text-[8px] text-slate-500">Status Saringan Saat Ini:</p>
               <div className="flex flex-col gap-1 text-[9px] font-semibold font-mono text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-150">
-                <div>• Petugas: <b className="text-indigo-600">{selectedFacilitatorFilter === 'all' ? 'Semua Petugas' : selectedFacilitatorFilter}</b></div>
+                <div>• Petugas (Penginput &amp; Pendata): <b className="text-indigo-600">{selectedFacilitatorFilter === 'all' ? 'Semua Petugas' : selectedFacilitatorFilter}</b></div>
                 <div>• Periode: <b className="text-slate-700">
                   {filterStartMonth || filterStartYear || filterEndMonth || filterEndYear ? (
                     `${filterStartMonth ? `Bln ${filterStartMonth}` : ''} ${filterStartYear || ''} - ${filterEndMonth ? `Bln ${filterEndMonth}` : ''} ${filterEndYear || ''}`

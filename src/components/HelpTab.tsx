@@ -1,76 +1,356 @@
-import React from 'react';
-import { HelpCircle, Info, BookOpen } from 'lucide-react';
+import React, { useState } from 'react';
+import { HelpCircle, Info, BookOpen, Database, Code, FileSpreadsheet, Copy, Check, Terminal, ExternalLink } from 'lucide-react';
 
 export default function HelpTab() {
+  const [activeSubTab, setActiveSubTab] = useState<'parameters' | 'appscript'>('parameters');
+  const [copied, setCopied] = useState(false);
+
+  const appScriptCode = `/**
+ * SLRT KITO Kota Tanjungbalai - Google Sheets Integration Script
+ * 
+ * Panduan Pengoperasian:
+ * 1. Di Google Sheets, buka menu "Ekstensi" (Extensions) -> klik "Apps Script".
+ * 2. Hapus seluruh kode bawaan yang ada di editor gs tersebut.
+ * 3. Tempelkan seluruh kode di bawah ini ke editor.
+ * 4. Klik ikon Simpan (disket) lalu jalankan fungsi 'setupSheet' pertama kali untuk inisiasi otomatis.
+ * 5. Untuk mengaktifkan Webhook Integrasi: Klik "Terapkan" (Deploy) -> "Penerapan Baru" (New deployment).
+ *    - Pilih Jenis: Aplikasi Web (Web app)
+ *    - Jalankan Sebagai (Execute as): Saya (Me / Email Anda)
+ *    - Siapa yang memiliki akses (Who has access): Siapa saja (Anyone)
+ *    - Klik Deploy, setujui izin akses akun Anda, dan salin URL Webapp yang diberikan!
+ */
+
+const SHEET_NAME = "Laporan SLRT KITO";
+
+// Inisialisasi & Format Google Sheet otomatis
+function setupSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_NAME);
+  
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME);
+  }
+  
+  sheet.clear();
+  
+  // Header kolom laporan sesuai format SLRT KITO Tanjungbalai
+  const headers = [
+    "ID Record",
+    "Kecamatan",
+    "Kelurahan",
+    "Hari/Tanggal Input",
+    "Nama Klien",
+    "Pekerjaan Kepala RT",
+    "Nama Kuasa (Wakil)",
+    "Alamat Lengkap",
+    "No HP / WhatsApp",
+    "Kebutuhan Berkas",
+    "Skenario Kerentanan",
+    "Bantuan Sosial Aktif",
+    "Status Kepemilikan Rumah",
+    "Sumber Penerangan Utama",
+    "Kondisi Fasilitas Sanitasi MCK",
+    "Penghasilan Bulanan",
+    "Deskripsi Pengaduan",
+    "Jenis Usulan Layanan",
+    "Status Verifikasi Kunjungan",
+    "Tanggal Verifikasi",
+    "Catatan Petugas Lapangan",
+    "Petugas Penginput",
+    "Petugas Pendata (Verifier)"
+  ];
+  
+  // Tulis Header ke Baris Pertama
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  
+  // Format Header (Warna Toska Dinas Sosial Tanjungbalai, text bold, putih, rata tengah)
+  const headerRange = sheet.getRange(1, 1, 1, headers.length);
+  headerRange.setBackground("#0f766e") // Teal-700
+             .setFontColor("#ffffff")
+             .setFontWeight("bold")
+             .setFontFamily("Inter")
+             .setFontSize(10)
+             .setHorizontalAlignment("center")
+             .setVerticalAlignment("middle");
+             
+  sheet.setRowHeight(1, 30);
+  
+  // Bekukan baris pertama agar mempermudah scroll data
+  sheet.setFrozenRows(1);
+  
+  // Atur jenis huruf umum
+  sheet.getRange(1, 1, 500, headers.length).setFontFamily("Inter").setFontSize(9);
+  
+  // Auto-resize kolom berdasarkan konten terkustom
+  for (let i = 1; i <= headers.length; i++) {
+    sheet.autoResizeColumn(i);
+    const width = sheet.getColumnWidth(i);
+    if (width < 130) {
+      sheet.setColumnWidth(i, 130);
+    }
+  }
+  
+  SpreadsheetApp.getUi().alert("✅ Sukses menginisiasi tabel Laporan SLRT KITO dengan format Dinas Sosial Tanjungbalai!");
+}
+
+// Membuat Menu Pintasan Kustom di Google Sheets
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu("🟢 Menu SLRT KITO")
+    .addItem("Inisialisasi & Format Ulang Tabel", "setupSheet")
+    .addSeparator()
+    .addItem("Rapikan Baris & Format Status", "autofitAndStyleRows")
+    .addToUi();
+}
+
+// Fungsi Otomatisasi Layout Data
+function autofitAndStyleRows() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) return;
+  
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow <= 1) return;
+  
+  // Terapkan border tipis abu-abu
+  const range = sheet.getRange(2, 1, lastRow - 1, lastCol);
+  range.setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+  range.setVerticalAlignment("middle");
+  
+  // Zebra striping baris genap ganjil serta pewarnaan status verifikasi
+  for (let r = 2; r <= lastRow; r++) {
+    const rowRange = sheet.getRange(r, 1, 1, lastCol);
+    if (r % 2 === 0) {
+      rowRange.setBackground("#f8fafc");
+    } else {
+      rowRange.setBackground("#ffffff");
+    }
+    sheet.setRowHeight(r, 24);
+    
+    // Warnai status kolom 'Status Verifikasi Kunjungan' (kolom ke-19)
+    const statusCell = sheet.getRange(r, 19);
+    const statusVal = statusCell.getValue();
+    if (statusVal === "Sudah Dikunjungi" || statusVal === "Terverifikasi") {
+      statusCell.setBackground("#d1fae5").setFontColor("#065f46").setFontWeight("bold");
+    } else {
+      statusCell.setBackground("#fef3c7").setFontColor("#92400e").setFontWeight("bold");
+    }
+  }
+}
+
+// Webhook POST API untuk menerima data sync instan dari aplikasi SLRT KITO
+function doPost(e) {
+  try {
+    const payload = JSON.parse(e.postData.contents);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) {
+      sheet = ss.insertSheet(SHEET_NAME);
+      setupSheet();
+    }
+    
+    if (sheet.getLastRow() === 0) {
+      setupSheet();
+    }
+    
+    const rowData = [
+      payload.id || "rec-" + new Date().getTime(),
+      payload.kecamatan || "",
+      payload.kelurahan || "",
+      payload.hariTanggal || new Date().toLocaleDateString("id-ID"),
+      payload.namaKlien || "",
+      payload.pekerjaanKrt || "",
+      payload.namaKuasa || "-",
+      payload.alamatKlien || "",
+      payload.nomorHp || "",
+      payload.kebutuhanBerkas || "",
+      payload.skenarioKebutuhan || "",
+      payload.bantuanDiterima || "",
+      payload.statusRumah || "",
+      payload.jenisPenerangan || "",
+      payload.mck || "",
+      payload.pendapatanPerbulan || "",
+      payload.jenisPengaduan || "",
+      payload.jenisLayanan || "",
+      payload.statusKunjungan || "Belum Dikunjungi",
+      payload.tanggalPemeriksaan || "-",
+      payload.catatanPemeriksa || "-",
+      payload.diinputOleh || "Admin",
+      payload.namaPendata || payload.namaFasilitator || ""
+    ];
+    
+    sheet.appendRow(rowData);
+    autofitAndStyleRows();
+    
+    return ContentService.createTextOutput(JSON.stringify({ 
+      status: "success", 
+      message: "Data terkirim & tersimpan di Google Sheet!" 
+    })).setMimeType(ContentService.MimeType.JSON);
+    
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ 
+      status: "error", 
+      message: err.toString() 
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}`;
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(appScriptCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col gap-6 font-sans">
-      <div>
-        <h3 className="text-xl font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2 font-display">
-          <BookOpen className="w-5 h-5 text-indigo-600" />
-          Kamus Panduan 18 Lapangan Kerja SLRT KITO
-        </h3>
-        <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-          Agar pengumpulan data oleh fasilitator se-Kota Tanjungbalai valid dan sinkron saat disalurkan ke sistem rujukan Kemensos RI (DTKS), gunakan acuan pengisian bidang di bawah ini:
-        </p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-100 pb-4 gap-4">
+        <div>
+          <h3 className="text-lg font-black text-slate-900 flex items-center gap-2 font-display uppercase tracking-tight">
+            <BookOpen className="w-5 h-5 text-teal-600 animate-pulse" />
+            Pusat Dokumentasi &amp; Integrasi SLRT KITO
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+            Panduan lapangan dinas sosial Tanjungbalai beserta skrip otomatisasi integrasi Google Sheets.
+          </p>
+        </div>
+
+        {/* Navigation Tab */}
+        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0 self-start md:self-center font-semibold text-[11px]">
+          <button
+            onClick={() => setActiveSubTab('parameters')}
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all text-xs cursor-pointer ${
+              activeSubTab === 'parameters'
+                ? 'bg-white text-indigo-750 shadow-xs font-black'
+                : 'text-slate-650 hover:text-slate-900'
+            }`}
+          >
+            <Info className="w-3.5 h-3.5" />
+            Kamus 18 Parameter
+          </button>
+          <button
+            onClick={() => setActiveSubTab('appscript')}
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all text-xs cursor-pointer ${
+              activeSubTab === 'appscript'
+                ? 'bg-white text-emerald-750 shadow-xs font-black'
+                : 'text-slate-650 hover:text-slate-900'
+            }`}
+          >
+            <Code className="w-3.5 h-3.5 text-emerald-600" />
+            Google Apps Script
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-        
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 shadow-inner flex flex-col gap-2.5">
-          <h4 className="font-bold text-indigo-900 flex items-center gap-1">
-            <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">A</span>
-            Parameter 1 - 5: Identitas Kunjungan
-          </h4>
-          <ul className="space-y-2 text-slate-600 pl-1">
-            <li><strong>1. Nama Fasilitator</strong>: Petugas SLRT Dinas Sosial yang mendata langsung (contoh: <i>Ahmad Fauzi</i>).</li>
-            <li><strong>2. Kelurahan</strong>: Kelurahan tempat tinggal pemohon di Tanjungbalai (contoh: <i>Pahang</i>).</li>
-            <li><strong>3. Kecamatan</strong>: Kecamatan pemohon di Tanjungbalai (contoh: <i>Datuk Bandar</i>).</li>
-            <li><strong>4. Hari/Tanggal</strong>: Hari pelaksanaan kunjungan langsung (contoh: <i>Senin, 01 Juni 2026</i>).</li>
-            <li><strong>5. Nama Klien</strong>: Nama representasi penerima manfaat utama (contoh: <i>Ibu Mariam</i>).</li>
-          </ul>
-        </div>
+      {activeSubTab === 'parameters' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 shadow-inner flex flex-col gap-2.5">
+            <h4 className="font-bold text-indigo-900 flex items-center gap-1 text-[11.5px] uppercase tracking-wider">
+              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">A</span>
+              1 - 5: Identitas Kunjungan
+            </h4>
+            <ul className="space-y-2 text-slate-600 pl-1 leading-relaxed">
+              <li><strong>1. Nama Fasilitator</strong>: Petugas SLRT Dinas Sosial yang mengambil tanggung jawab lapangan (contoh: <i>Ahmad Fauzi</i>).</li>
+              <li><strong>2. Kelurahan</strong>: Kelurahan domisili pemohon di Kota Tanjungbalai (contoh: <i>Pahang</i>).</li>
+              <li><strong>3. Kecamatan</strong>: Kecamatan pemohon di Kota Tanjungbalai (contoh: <i>Datuk Bandar</i>).</li>
+              <li><strong>4. Hari/Tanggal</strong>: Hari pelaksanaan kunjungan langsung (contoh: <i>Senin, 01 Juni 2026</i>).</li>
+              <li><strong>5. Nama Klien</strong>: Nama kepala keluarga / representasi penerima manfaat utama (contoh: <i>Ibu Mariam</i>).</li>
+            </ul>
+          </div>
 
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 shadow-inner flex flex-col gap-2.5">
-          <h4 className="font-bold text-indigo-900 flex items-center gap-1">
-            <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">B</span>
-            Parameter 6 - 10: Profil &amp; Legalistas
-          </h4>
-          <ul className="space-y-2 text-slate-600 pl-1">
-            <li><strong>6. Pekerjaan KRT</strong>: Pekerjaan aktif Kepala Rumah Tangga (Nelayan, Buruh Cuci, Pedagang).</li>
-            <li><strong>7. Nama Kuasa</strong>: Diisi nama anak atau kerabat jika klien tidak dapat hadir langsung. Isi '-' jika tidak diwakili.</li>
-            <li><strong>8. Alamat Klien</strong>: Alamat detail agar tim Dinsos mudah mendatangi ulang lokasi (Jl., Gg., Lingkungan, RT/RW).</li>
-            <li><strong>9. No Telpon/HP</strong>: Kontak telepon aktif pemohon yang tersambung WhatsApp.</li>
-            <li><strong>10. Dokumen</strong>: Jenis berkas fotokopi penunjang yang dipersiapkan (KK, KTP-el, SKTM).</li>
-          </ul>
-        </div>
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 shadow-inner flex flex-col gap-2.5">
+            <h4 className="font-bold text-indigo-900 flex items-center gap-1 text-[11.5px] uppercase tracking-wider">
+              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">B</span>
+              6 - 10: Profil &amp; Legalitas
+            </h4>
+            <ul className="space-y-2 text-slate-600 pl-1 leading-relaxed">
+              <li><strong>6. Pekerjaan KRT</strong>: Pekerjaan aktif Kepala Rumah Tangga (Nelayan, Buruh Cuci, Supor Becak, Pedagang).</li>
+              <li><strong>7. Nama Kuasa</strong>: Diisi nama anak atau kerabat jika klien tidak dapat hadir langsung. Isi '-' jika tidak diwakili.</li>
+              <li><strong>8. Alamat Klien</strong>: Alamat detail agar tim Dinsos mudah mendatangi ulang lokasi (Jl., Gg., Lingkungan, RT/RW).</li>
+              <li><strong>9. No Telpon/HP</strong>: Kontak telepon aktif pemohon yang tersambung WhatsApp untuk koordinasi penyerahan bantuan.</li>
+              <li><strong>10. Dokumen</strong>: Jenis berkas fotokopi penunjang yang dipersiapkan (KK, KTP-el, SKTM dari Kelurahan setempat).</li>
+            </ul>
+          </div>
 
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 shadow-inner flex flex-col gap-2.5">
-          <h4 className="font-bold text-indigo-900 flex items-center gap-1">
-            <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">C</span>
-            Parameter 11 - 15: Sosio-Ekonomi &amp; Hunian
-          </h4>
-          <ul className="space-y-2 text-slate-600 pl-1">
-            <li><strong>11. Status Klien</strong>: Klasifikasi kerentanan (Sangat Miskin, Miskin, Rentan).</li>
-            <li><strong>12. Bantuan Sudah Diperoleh</strong>: Sebutkan bantuan aktif saat ini (BPNT, PKH, KIS, atau belum ada).</li>
-            <li><strong>13. Status Rumah</strong>: Hak milik hunian saat ini (Milik Sendiri, Sewa, Menumpang).</li>
-            <li><strong>14. Jenis Penerangan</strong>: Kapasitas daya listrik (PLN Bersubsidi 450W, PLN Non-Subsidi, Sambungan Numpang).</li>
-            <li><strong>15. MCK</strong>: Keadaan kelayakan toilet sanitasi klien (Sendiri Layak, Sendiri Kurang Layak, MCK Umum).</li>
-          </ul>
-        </div>
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 shadow-inner flex flex-col gap-2.5">
+            <h4 className="font-bold text-indigo-900 flex items-center gap-1 text-[11.5px] uppercase tracking-wider">
+              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">C</span>
+              11 - 15: Sosio-Ekonomi &amp; Hunian
+            </h4>
+            <ul className="space-y-2 text-slate-600 pl-1 leading-relaxed">
+              <li><strong>11. Status Klien</strong>: Klasifikasi kerentanan ekonomi (Sangat Miskin, Miskin, Rentan Miskin, Deshil 1).</li>
+              <li><strong>12. Bantuan Sudah Diperoleh</strong>: Sebutkan bantuan aktif saat ini (BPNT, PKH, KIS PBI APBD, atau belum ada).</li>
+              <li><strong>13. Status Rumah</strong>: Hak milik hunian saat ini (Milik Sendiri, Sewa, Menumpang, Rumah Komunal).</li>
+              <li><strong>14. Jenis Penerangan</strong>: Kapasitas daya listrik (PLN Bersubsidi 450W, PLN Non-Subsidi, Sambungan Numpang Tetangga).</li>
+              <li><strong>15. MCK</strong>: Keadaan kelayakan toilet sanitasi rumahtangga klien (Sendiri Layak, Sendiri Kurang Layak, MCK Umum).</li>
+            </ul>
+          </div>
 
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 shadow-inner flex flex-col gap-2.5">
-          <h4 className="font-bold text-indigo-900 flex items-center gap-1">
-            <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">D</span>
-            Parameter 16 - 18: Pengaduan &amp; Layanan
-          </h4>
-          <ul className="space-y-2 text-slate-600 pl-1 font-sans">
-            <li><strong>16. Pendapatan Perbulan</strong>: Penghasilan KRT sebulan (contoh: <i>Rp 650.000</i>).</li>
-            <li><strong>17. Jenis Pengaduan</strong>: Penjelasan rinci masalah klien (sakit kronis denda BPJS menumpuk, rawan sekolah).</li>
-            <li><strong>18. Jenis Layanan</strong>: Nama usulan perbaikan (contoh: <i>Reaktivasi KIS PBI, Beasiswa KIP, Renovasi RTLH</i>).</li>
-          </ul>
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 shadow-inner flex flex-col gap-2.5">
+            <h4 className="font-bold text-indigo-900 flex items-center gap-1 text-[11.5px] uppercase tracking-wider">
+              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">D</span>
+              16 - 18: Pengaduan &amp; Rujukan
+            </h4>
+            <ul className="space-y-2 text-slate-600 pl-1 leading-relaxed">
+              <li><strong>16. Pendapatan Perbulan</strong>: Penghasilan rata-rata KRT sebulan (contoh: <i>Rp 650.000 / Bulan</i>).</li>
+              <li><strong>17. Jenis Pengaduan</strong>: Penjelasan rinci masalah klien (anak sakit kronis denda BPJS menumpuk, rawan drop-out sekolah, janda tua tinggal sebatang kara).</li>
+              <li><strong>18. Jenis Layanan</strong>: Usulan jenis bantuan rujukan (Reaktivasi KIS PBI, Usulan Baru DTKS Kemensos, Beasiswa KIP, Renovasi Bedah Rumah RTLH).</li>
+            </ul>
+          </div>
         </div>
+      ) : (
+        <div className="flex flex-col gap-4 animate-fadeIn">
+          <div className="bg-teal-50 border border-teal-250 p-4 rounded-xl flex gap-3 text-xs leading-relaxed text-teal-900">
+            <FileSpreadsheet className="w-5 h-5 text-teal-700 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-teal-950 uppercase tracking-wide">Inisialisasi Tabel &amp; Sinkronisasi Google Sheets Otomatis</p>
+              <p className="mt-1">
+                Gunakan skrip Google Apps Script di bawah ini untuk mengubah lembar kerja Google Sheets Anda menjadi penampung data SLRT KITO Tanjungbalai yang otomatis terformat rapi sesuai baku mutu kedinasan, dilengkapi dengan pembuatan tombol cepat dan sistem Webhook API.
+              </p>
+            </div>
+          </div>
 
-      </div>
+          {/* Code Section */}
+          <div className="flex flex-col rounded-xl border border-slate-200 overflow-hidden shadow-xs bg-slate-900">
+            <div className="bg-slate-800 px-4 py-2 flex items-center justify-between text-xs text-slate-300 font-mono border-b border-slate-700">
+              <span className="flex items-center gap-1.5"><Terminal className="w-3.5 h-3.5 text-emerald-400" /> SLRT_Kito_Integration.gs</span>
+              <button
+                onClick={copyToClipboard}
+                className="bg-slate-700 hover:bg-slate-600 active:bg-slate-850 text-white rounded px-2.5 py-1 flex items-center gap-1 transition-all cursor-pointer font-bold text-[11px]"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-400" /> Terkopos!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3" /> Salin Kode
+                  </>
+                )}
+              </button>
+            </div>
+            
+            <pre className="p-4 overflow-x-auto text-[10.5px] font-mono text-slate-200 leading-normal max-h-[300px] bg-slate-925 select-all scrollbar-thin">
+              {appScriptCode}
+            </pre>
+          </div>
+
+          {/* Quick Guide */}
+          <div className="border border-slate-150 p-4 rounded-xl bg-slate-50/50 flex flex-col gap-2.5">
+            <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1">
+              🚀 Cara Menerapkan di Google Sheet Anda:
+            </h4>
+            <ol className="list-decimal list-inside text-xs text-slate-600 space-y-1.5 pl-1.5">
+              <li>Buka lembar kerja baru di <a href="https://sheets.google.com" target="_blank" rel="noopener noreferrer" className="text-teal-600 font-extrabold hover:underline inline-flex items-center gap-0.5">Google Sheets <ExternalLink className="w-3 h-3" /></a>.</li>
+              <li>Klik menu <b>Ekstensi (Extensions)</b> pada toolbar atas, lalu klik <b>Apps Script</b>.</li>
+              <li>Ganti kode default dengan kode yang telah Anda salin di atas.</li>
+              <li>Simpan proyek dengan menekan tombol <b>Simpan</b> (disket kecil).</li>
+              <li>Segarkan tab google sheet Anda. Anda akan melihat menu baru bernama <b>🟢 Menu SLRT KITO</b> muncul di samping menu bantuan.</li>
+              <li>Silakan klik <b>🟢 Menu SLRT KITO &gt; Inisialisasi &amp; Format Ulang Tabel</b> untuk membuat baris header toska dinas sosial Tanjungbalai secara instan!</li>
+            </ol>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
