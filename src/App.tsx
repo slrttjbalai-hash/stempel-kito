@@ -2242,46 +2242,53 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       });
     };
 
-    // Helper to load any internal base64 or external url with timeout
+    // Helper to load any internal base64 or external url with timeout and auto-conversion to standard JPEG
     const loadAnyImageBase64 = (srcUrl: string): Promise<string> => {
       return new Promise((resolve) => {
         if (!srcUrl) {
           resolve('');
           return;
         }
-        if (srcUrl.startsWith('data:')) {
+        
+        // If it is already a Jpeg data url, we resolve immediately for extreme performance
+        if (srcUrl.startsWith('data:image/jpeg')) {
           resolve(srcUrl);
           return;
         }
-        
-        // Timeout to prevent hanging
-        const timeoutId = setTimeout(() => {
-          resolve('');
-        }, 1200);
 
+        // For non-JPEG base64 and external URLs, we load them into canvas to convert to JPEG format
         const img = new Image();
-        img.crossOrigin = 'Anonymous';
+        if (!srcUrl.startsWith('data:')) {
+          img.crossOrigin = 'Anonymous';
+        }
+        
+        const timeoutId = setTimeout(() => {
+          resolve(srcUrl.startsWith('data:') ? srcUrl : '');
+        }, 2500);
+
         img.onload = () => {
           clearTimeout(timeoutId);
           try {
             const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
+            canvas.width = img.width || 645;
+            canvas.height = img.height || 480;
             const ctx = canvas.getContext('2d');
             if (ctx) {
               ctx.drawImage(img, 0, 0);
-              resolve(canvas.toDataURL('image/jpeg'));
+              resolve(canvas.toDataURL('image/jpeg', 0.85));
             } else {
-              resolve('');
+              resolve(srcUrl.startsWith('data:') ? srcUrl : '');
             }
           } catch (e) {
-            resolve('');
+            resolve(srcUrl.startsWith('data:') ? srcUrl : '');
           }
         };
+
         img.onerror = () => {
           clearTimeout(timeoutId);
-          resolve('');
+          resolve(srcUrl.startsWith('data:') ? srcUrl : '');
         };
+
         img.src = srcUrl;
       });
     };

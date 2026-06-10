@@ -100,7 +100,10 @@ function setupSheet() {
     "Tanggal Verifikasi",
     "Catatan Petugas Lapangan",
     "Petugas Penginput",
-    "Petugas Pendata (Verifier)"
+    "Petugas Pendata (Verifier)",
+    "Foto KK/KTP (Base64)",
+    "Foto Depan Rumah (Base64)",
+    "Foto Kontrol Kunjungan (Base64)"
   ];
   sheetRec.getRange(1, 1, 1, headersRec.length).setValues([headersRec]);
   
@@ -360,7 +363,7 @@ function getInitialData() {
   if (sheetRec) {
     const lastRow = sheetRec.getLastRow();
     if (lastRow > 1) {
-      const values = sheetRec.getRange(2, 1, lastRow - 1, 23).getValues();
+      const values = sheetRec.getRange(2, 1, lastRow - 1, 26).getValues();
       for (let i = 0; i < values.length; i++) {
         const row = values[i];
         records.push({
@@ -386,7 +389,10 @@ function getInitialData() {
           tanggalPemeriksaan: String(row[19]) || "-",
           catatanPemeriksa: String(row[20]) || "-",
           diinputOleh: row[21] ? String(row[21]) : "Admin",
-          namaPendata: row[22] ? String(row[22]) : ""
+          namaPendata: row[22] ? String(row[22]) : "",
+          fotoKkKtp: row[23] ? String(row[23]) : "",
+          fotoDepanRumah: row[24] ? String(row[24]) : "",
+          dokumentasiBukti: row[25] ? String(row[25]) : ""
         });
       }
     }
@@ -576,7 +582,10 @@ function syncRecord(data) {
     data.tanggalPemeriksaan || "-",
     data.catatanPemeriksa || "-",
     data.diinputOleh || "Admin",
-    data.namaPendata || data.namaFasilitator || ""
+    data.namaPendata || data.namaFasilitator || "",
+    data.fotoKkKtp || "",
+    data.fotoDepanRumah || "",
+    data.dokumentasiBukti || ""
   ];
   
   if (foundRow !== -1) {

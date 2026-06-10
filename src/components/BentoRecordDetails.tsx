@@ -148,7 +148,8 @@ export default function BentoRecordDetails({
                   </>
                 )}
               </span>
-                        <div className="space-y-4">
+            </div>
+            <div className="space-y-4">
                {rec.statusKunjungan === 'Sudah Dikunjungi' ? (
                  <div>
                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs mb-3">
@@ -288,7 +289,6 @@ export default function BentoRecordDetails({
              )}
            </div>
          </div>
-       </div>
       </div>
 
       {/* CARD 3: SOCIAL & ECONOMY */}
