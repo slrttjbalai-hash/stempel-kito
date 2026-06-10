@@ -177,10 +177,43 @@ export default function App() {
   // Registered Field Facilitators state
   const [facilitators, setFacilitators] = useState<FacilitatorUser[]>(() => {
     const saved = localStorage.getItem('slrt_facilitators');
-    return saved ? JSON.parse(saved) : INITIAL_FACILITATORS;
+    const fList = saved ? JSON.parse(saved) : INITIAL_FACILITATORS;
+    const savedOverrides = localStorage.getItem('slrt_status_overrides');
+    if (savedOverrides) {
+      try {
+        const overrides = JSON.parse(savedOverrides);
+        return fList.map((f: any) => {
+          if (overrides[f.id]) {
+            return { ...f, status: overrides[f.id] };
+          }
+          return f;
+        });
+      } catch (e) {
+        console.error("Error parsing local overrides:", e);
+      }
+    }
+    return fList;
   });
 
   const GOOGLE_SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbwUWtSHMJst3h8RpH7mWaRgcH6g0PmffIrxKLnlO0eRQBYLaz19ht7AHmX6o2kQpfge7A/exec";
+
+  // Reconcile list of facilitators with administrative status overrides
+  const getReconciledFacilitators = (rawFacs: FacilitatorUser[]): FacilitatorUser[] => {
+    const savedOverrides = localStorage.getItem('slrt_status_overrides');
+    if (!savedOverrides) return rawFacs;
+    try {
+      const overrides = JSON.parse(savedOverrides);
+      return rawFacs.map(f => {
+        if (overrides[f.id]) {
+          return { ...f, status: overrides[f.id] };
+        }
+        return f;
+      });
+    } catch (e) {
+      console.error("Gagal merekonsoliasi status kustom:", e);
+      return rawFacs;
+    }
+  };
 
   // State for synchronization status
   const [cloudLoading, setCloudLoading] = useState(false);
@@ -209,8 +242,9 @@ export default function App() {
           localStorage.setItem('slrt_records', JSON.stringify(json.records));
         }
         if (json.facilitators && Array.isArray(json.facilitators)) {
-          setFacilitators(json.facilitators);
-          localStorage.setItem('slrt_facilitators', JSON.stringify(json.facilitators));
+          const reconciled = getReconciledFacilitators(json.facilitators);
+          setFacilitators(reconciled);
+          localStorage.setItem('slrt_facilitators', JSON.stringify(reconciled));
         }
         const now = new Date();
         setLastCloudSync(now.toLocaleTimeString('id-ID'));
@@ -450,9 +484,10 @@ export default function App() {
       if (response.ok) {
         const json = await response.json();
         if (json.facilitators && Array.isArray(json.facilitators)) {
-          currentFacs = json.facilitators;
-          setFacilitators(json.facilitators);
-          localStorage.setItem('slrt_facilitators', JSON.stringify(json.facilitators));
+          const reconciled = getReconciledFacilitators(json.facilitators);
+          currentFacs = reconciled;
+          setFacilitators(reconciled);
+          localStorage.setItem('slrt_facilitators', JSON.stringify(reconciled));
         }
         if (json.records && Array.isArray(json.records)) {
           setRecords(json.records);
@@ -532,9 +567,10 @@ export default function App() {
       if (response.ok) {
         const json = await response.json();
         if (json.facilitators && Array.isArray(json.facilitators)) {
-          currentFacs = json.facilitators;
-          setFacilitators(json.facilitators);
-          localStorage.setItem('slrt_facilitators', JSON.stringify(json.facilitators));
+          const reconciled = getReconciledFacilitators(json.facilitators);
+          currentFacs = reconciled;
+          setFacilitators(reconciled);
+          localStorage.setItem('slrt_facilitators', JSON.stringify(reconciled));
         }
       }
     } catch (err) {
@@ -620,6 +656,17 @@ export default function App() {
   // 4. Admin Action: Approve/Reject Facilitator Status with Google Sheets update
   const handleUpdateFacilitatorStatus = async (id: string, newStatus: 'APPROVED' | 'REJECTED') => {
     const matched = facilitators.find(f => f.id === id);
+
+    // Save the status override locally so it cannot be reverted by background synchronization
+    try {
+      const savedOverrides = localStorage.getItem('slrt_status_overrides');
+      const overrides = savedOverrides ? JSON.parse(savedOverrides) : {};
+      overrides[id] = newStatus;
+      localStorage.setItem('slrt_status_overrides', JSON.stringify(overrides));
+    } catch (e) {
+      console.error("Gagal menyimpan override status lokal:", e);
+    }
+
     setFacilitators(prev => prev.map(f => {
       if (f.id === id) {
         return { ...f, status: newStatus };
@@ -652,6 +699,18 @@ export default function App() {
   // 5. Admin Action: Delete Facilitator Account with Google Sheets update
   const handleDeleteFacilitator = async (id: string) => {
     if (window.confirm("Apakah Anda yakin ingin menghapus akun Fasilitator ini dari sistem?")) {
+      // Purge any local status override for this deleted accounts
+      try {
+        const savedOverrides = localStorage.getItem('slrt_status_overrides');
+        if (savedOverrides) {
+          const overrides = JSON.parse(savedOverrides);
+          delete overrides[id];
+          localStorage.setItem('slrt_status_overrides', JSON.stringify(overrides));
+        }
+      } catch (e) {
+        console.error("Gagal menghapus override status lokal:", e);
+      }
+
       setFacilitators(prev => prev.filter(f => f.id !== id));
       
       // Delete facilitator from Google Sheets database (bypassing CORS)
