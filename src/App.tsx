@@ -180,6 +180,63 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_FACILITATORS;
   });
 
+  const GOOGLE_SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbwUWtSHMJst3h8RpH7mWaRgcH6g0PmffIrxKLnlO0eRQBYLaz19ht7AHmX6o2kQpfge7A/exec";
+
+  // State for synchronization status
+  const [cloudLoading, setCloudLoading] = useState(false);
+  const [lastCloudSync, setLastCloudSync] = useState<string | null>(null);
+
+  // Parse User Agent to get friendly device info
+  const getDeviceDetails = () => {
+    const ua = navigator.userAgent;
+    if (/android/i.test(ua)) return "Android HP/Tablet";
+    if (/iPad|iPhone|iPod/.test(ua)) return "iOS Apple Device";
+    if (/windows/i.test(ua)) return "Windows PC";
+    if (/macintosh/i.test(ua)) return "macOS Apple PC";
+    if (/linux/i.test(ua)) return "Linux System";
+    return "Perangkat Tidak Teridentifikasi (" + navigator.platform + ")";
+  };
+
+  // Synchronize initial data from Google Sheets database (facilitators + records)
+  const refreshFromCloud = async (showNotification: boolean = false) => {
+    setCloudLoading(true);
+    try {
+      const response = await fetch(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
+      if (response.ok) {
+        const json = await response.json();
+        if (json.records && Array.isArray(json.records)) {
+          setRecords(json.records);
+          localStorage.setItem('slrt_records', JSON.stringify(json.records));
+        }
+        if (json.facilitators && Array.isArray(json.facilitators)) {
+          setFacilitators(json.facilitators);
+          localStorage.setItem('slrt_facilitators', JSON.stringify(json.facilitators));
+        }
+        const now = new Date();
+        setLastCloudSync(now.toLocaleTimeString('id-ID'));
+        if (showNotification) {
+          alert("✓ Sinkronisasi Berhasil!\nSeluruh data akun pendata dan laporan pengaduan berhasil tersinkronisasi offline/online secara real-time dari Google Sheets.");
+        }
+      } else {
+        if (showNotification) {
+          alert("Gagal memuat data dari Google Sheets, menggunakan salinan data lokal.");
+        }
+      }
+    } catch (err) {
+      console.warn("Gagal terhubung dengan database cloud Google Sheets, sistem beralih menggunakan basis data lokal offline:", err);
+      if (showNotification) {
+        alert("Gagal terhubung ke database pusat Google Sheets. Pastikan koneksi internet aktif, lalu coba kembali.");
+      }
+    } finally {
+      setCloudLoading(false);
+    }
+  };
+
+  // Synchronize on startup
+  useEffect(() => {
+    refreshFromCloud(false);
+  }, []);
+
   // Form input states for Authentication Gate
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -231,6 +288,7 @@ export default function App() {
   const [verifierFotoKkKtp, setVerifierFotoKkKtp] = useState('');
   const [verifierFotoDepanRumah, setVerifierFotoDepanRumah] = useState('');
   const [selectedFacilitatorFilter, setSelectedFacilitatorFilter] = useState<string>('all');
+  const [selectedPendataFilter, setSelectedPendataFilter] = useState<string>('all');
   const [visiblePasswords, setVisiblePasswords] = useState<{[key: string]: boolean}>({});
 
   // Warga Portal Specific Input form / search
@@ -244,6 +302,9 @@ export default function App() {
   const [wargaAddPekerjaan, setWargaAddPekerjaan] = useState('');
   const [wargaAddNik, setWargaAddNik] = useState('');
   const [wargaFormSuccess, setWargaFormSuccess] = useState<string | null>(null);
+
+  const [backgroundSyncStatus, setBackgroundSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+  const [syncingTargetName, setSyncingTargetName] = useState<string>('');
 
   // State for active tabs: 'all-records' | 'add-record' | 'smart-parser' | 'help'
   const [activeTab, setActiveTab] = useState<'all-records' | 'add-record' | 'smart-parser' | 'help'>('all-records');
@@ -365,8 +426,8 @@ export default function App() {
     }
   };
 
-  // 2. Facilitator Login Submission
-  const handleFacilitatorLogin = (e: React.FormEvent) => {
+  // 2. Facilitator Login Submission with Live Google Sheets Verification
+  const handleFacilitatorLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
     if (!authEmail.trim() || !authPassword.trim()) {
@@ -374,7 +435,32 @@ export default function App() {
       return;
     }
 
-    const matched = facilitators.find(f => f.email.trim().toLowerCase() === authEmail.trim().toLowerCase());
+    setCloudLoading(true);
+    let currentFacs = facilitators;
+    try {
+      // Fetch latest registered facilitators & records in real-time
+      const response = await fetch(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
+      if (response.ok) {
+        const json = await response.json();
+        if (json.facilitators && Array.isArray(json.facilitators)) {
+          currentFacs = json.facilitators;
+          setFacilitators(json.facilitators);
+          localStorage.setItem('slrt_facilitators', JSON.stringify(json.facilitators));
+        }
+        if (json.records && Array.isArray(json.records)) {
+          setRecords(json.records);
+          localStorage.setItem('slrt_records', JSON.stringify(json.records));
+        }
+        const now = new Date();
+        setLastCloudSync(now.toLocaleTimeString('id-ID'));
+      }
+    } catch (err) {
+      console.warn("Gagal sinkron data cloud saat login, memproses dengan data luring offline lokal:", err);
+    } finally {
+      setCloudLoading(false);
+    }
+
+    const matched = currentFacs.find(f => f.email.trim().toLowerCase() === authEmail.trim().toLowerCase());
     if (!matched) {
       setAuthError("Surel/Email tidak ditemukan dalam sistem. Jika Anda baru, silakan lakukan Registrasi terlebih dahulu.");
       return;
@@ -416,7 +502,7 @@ export default function App() {
   };
 
   // 3. Facilitator New Registration / Sign-Up Submission (Initial status: PENDING_APPROVAL)
-  const handleFacilitatorRegister = (e: React.FormEvent) => {
+  const handleFacilitatorRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
     setRegSuccess(null);
@@ -431,14 +517,33 @@ export default function App() {
       return;
     }
 
+    setCloudLoading(true);
+    let currentFacs = facilitators;
+    try {
+      // Sync facilitators from cloud to guarantee duplication check is 100% accurate across all devices
+      const response = await fetch(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
+      if (response.ok) {
+        const json = await response.json();
+        if (json.facilitators && Array.isArray(json.facilitators)) {
+          currentFacs = json.facilitators;
+          setFacilitators(json.facilitators);
+          localStorage.setItem('slrt_facilitators', JSON.stringify(json.facilitators));
+        }
+      }
+    } catch (err) {
+      console.warn("Gagal mengecek tumpukan data awan saat registrasi, melanjutkan secara lokal:", err);
+    } finally {
+      setCloudLoading(false);
+    }
+
     // Check NIK duplication or Email duplication
-    const hasEmail = facilitators.some(f => f.email.toLowerCase() === regEmail.trim().toLowerCase());
+    const hasEmail = currentFacs.some(f => f.email.toLowerCase() === regEmail.trim().toLowerCase());
     if (hasEmail) {
       setAuthError("Email ini sudah terdaftar dalam sistem. Gunakan email lain atau login kembali.");
       return;
     }
 
-    const hasNik = facilitators.some(f => f.nik === regNik.trim());
+    const hasNik = currentFacs.some(f => f.nik === regNik.trim());
     if (hasNik) {
       setAuthError("Nomor NIK ini sudah terdaftar dalam sistem.");
       return;
@@ -465,9 +570,35 @@ export default function App() {
       createdAt: createdDateString
     };
 
-    setFacilitators(prev => [...prev, newFacilitator]);
-    setRegSuccess(`Registrasi sukses untuk "${regName}"! Akun Anda kini terdaftar dengan status PENDING_APPROVAL. Silakan hubungi Administrator Dinsos untuk aktivasi.`);
-    
+    setCloudLoading(true);
+    try {
+      // Post registration down to Google Sheets database including current parsed device details
+      const response = await fetch(GOOGLE_SHEETS_API_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: 'registerFacilitator',
+          data: {
+            ...newFacilitator,
+            perangkat: getDeviceDetails()
+          }
+        })
+      });
+
+      if (response.ok) {
+        setFacilitators(prev => [...prev, newFacilitator]);
+        setRegSuccess(`Registrasi sukses untuk "${regName}"! Akun Anda kini tercatat online di Google Sheets dengan status PENDING_APPROVAL. Silakan hubungi Administrator Dinsos untuk aktivasi.`);
+      } else {
+        throw new Error("Cloud Sheets error code response.");
+      }
+    } catch (err) {
+      console.error("Cloud registration failed:", err);
+      // Fallback local registration
+      setFacilitators(prev => [...prev, newFacilitator]);
+      setRegSuccess(`Registrasi sukses (offline/lokal) untuk "${regName}"! Akun Anda kini tersimpan dalam cache lokal dengan status PENDING_APPROVAL.`);
+    } finally {
+      setCloudLoading(false);
+    }
+
     // Clear registration fields
     setRegName('');
     setRegNik('');
@@ -478,8 +609,8 @@ export default function App() {
     setIsRegisterMode(false); // return to login area for feedback
   };
 
-  // 4. Admin Action: Approve/Reject Facilitator Status
-  const handleUpdateFacilitatorStatus = (id: string, newStatus: 'APPROVED' | 'REJECTED') => {
+  // 4. Admin Action: Approve/Reject Facilitator Status with Google Sheets update
+  const handleUpdateFacilitatorStatus = async (id: string, newStatus: 'APPROVED' | 'REJECTED') => {
     setFacilitators(prev => prev.map(f => {
       if (f.id === id) {
         return { ...f, status: newStatus };
@@ -487,15 +618,43 @@ export default function App() {
       return f;
     }));
     
+    // Sync status change directly to Google Sheets database
+    try {
+      await fetch(GOOGLE_SHEETS_API_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: 'updateFacilitatorStatus',
+          id: id,
+          status: newStatus
+        })
+      });
+    } catch (err) {
+      console.error("Gagal sinkron status fasilitas ke cloud:", err);
+    }
+
     const matched = facilitators.find(f => f.id === id);
     const label = newStatus === 'APPROVED' ? 'DISETUJUI (Aktif)' : 'DITOLAK (Nonaktif)';
     alert(`Fasilitator "${matched?.name || ''}" berhasil diubah status menjadi: ${label}`);
   };
 
-  // 5. Admin Action: Delete Facilitator Account
-  const handleDeleteFacilitator = (id: string) => {
+  // 5. Admin Action: Delete Facilitator Account with Google Sheets update
+  const handleDeleteFacilitator = async (id: string) => {
     if (window.confirm("Apakah Anda yakin ingin menghapus akun Fasilitator ini dari sistem?")) {
       setFacilitators(prev => prev.filter(f => f.id !== id));
+      
+      // Delete facilitator from Google Sheets database
+      try {
+        await fetch(GOOGLE_SHEETS_API_URL, {
+          method: "POST",
+          body: JSON.stringify({
+            action: 'deleteFacilitator',
+            id: id
+          })
+        });
+      } catch (err) {
+        console.error("Gagal menghapus fasilitas di database cloud:", err);
+      }
+      
       alert("Akun Fasilitator berhasil dihapus dari sistem.");
     }
   };
@@ -731,6 +890,9 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       setSelectedRecordId(compiledRecord.id);
     }
 
+    // Auto-sync directly to Google Sheets database in the background
+    handleSyncToGoogleSheets(compiledRecord, true);
+
     resetForm();
     setActiveTab('all-records');
   };
@@ -937,9 +1099,10 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     e.preventDefault();
     if (!selectedVerifierRecord) return;
 
+    let compiledRecordForSync: SLRTRecord | null = null;
     const updatedRecords = records.map(rec => {
       if (rec.id === selectedVerifierRecord.id) {
-        return {
+        const updated = {
           ...rec,
           statusKunjungan: 'Sudah Dikunjungi' as const,
           tanggalPemeriksaan: verifierDate.trim() || 'Hari Ini',
@@ -949,6 +1112,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           fotoKkKtp: verifierFotoKkKtp,
           fotoDepanRumah: verifierFotoDepanRumah
         };
+        compiledRecordForSync = updated;
+        return updated;
       }
       return rec;
     });
@@ -957,6 +1122,11 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setSelectedRecordId(selectedVerifierRecord.id);
     setShowVerifierModal(false);
     setSelectedVerifierRecord(null);
+
+    // Auto-sync the verified visitation fields back to the Google Sheets central database
+    if (compiledRecordForSync) {
+      handleSyncToGoogleSheets(compiledRecordForSync, true);
+    }
   };
 
   // Citizen direct report submit handler (Pelaporan Mandiri Warga)
@@ -1007,6 +1177,10 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     };
 
     setRecords(prev => [CitizenReport, ...prev]);
+    
+    // Auto-sync directly to Google Sheets database in the background
+    handleSyncToGoogleSheets(CitizenReport, true);
+
     setWargaSearchQuery(wargaAddPhone.trim()); // auto lock lookup search query to easily let citizen track it!
     setWargaFormSuccess(`Laporan Anda berhasil dikirim! Silakan lacak dengan menggunakan kata kunci nomor HP: ${wargaAddPhone}`);
     
@@ -1074,9 +1248,15 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       const matchesStatus = filterStatus ? rec.status === filterStatus : true;
       const matchesKunjungan = filterKunjungan ? (rec.statusKunjungan || 'Belum Dikunjungi') === filterKunjungan : true;
 
-      const matchesFasilitatorFilter = selectedFacilitatorFilter && selectedFacilitatorFilter !== 'all'
-        ? (rec.namaFasilitator === selectedFacilitatorFilter || rec.namaPendata === selectedFacilitatorFilter)
-        : true;
+      let matchesFasilitatorFilter = true;
+      if (selectedFacilitatorFilter && selectedFacilitatorFilter !== 'all') {
+        matchesFasilitatorFilter = rec.namaFasilitator === selectedFacilitatorFilter;
+      }
+
+      let matchesPendataFilter = true;
+      if (selectedPendataFilter && selectedPendataFilter !== 'all') {
+        matchesPendataFilter = rec.namaPendata === selectedPendataFilter;
+      }
 
       // Range Month & Year filter
       const parsedDate = parseMonthAndYear(rec.hariTanggal);
@@ -1132,7 +1312,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         }
       }
 
-      return matchesSearch && matchesKecamatan && matchesKelurahan && matchesStatus && matchesKunjungan && matchesFasilitatorFilter && matchesDateRange && matchesVerifDateRange;
+      return matchesSearch && matchesKecamatan && matchesKelurahan && matchesStatus && matchesKunjungan && matchesFasilitatorFilter && matchesPendataFilter && matchesDateRange && matchesVerifDateRange;
     });
   }, [
     records, 
@@ -1142,6 +1322,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     filterStatus, 
     filterKunjungan, 
     selectedFacilitatorFilter,
+    selectedPendataFilter,
     filterStartMonth,
     filterStartYear,
     filterEndMonth,
@@ -1236,19 +1417,23 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       'Jenis Layanan Rujukan': rec.jenisLayanan,
       'Sumber Input Awal': rec.diinputOleh || 'Admin',
       'Tanggal Input / Registrasi': rec.hariTanggal,
-      // Target requested verification metrics
-      'Nama Petugas Lapangan': rec.namaFasilitator || 'Belum Ditunjuk',
+      
+      // Target requested verification metrics with side-by-side columns
+      'Fasilitator Lapangan': rec.namaFasilitator || 'Belum Ditunjuk',
+      'Nama Pendata': rec.namaPendata || (rec.statusKunjungan === 'Sudah Dikunjungi' ? (rec.namaFasilitator || 'Petugas SLRT') : 'Belum Diverifikasi'),
       'Tanggal Verifikasi Lapangan (Audit)': rec.tanggalPemeriksaan || 'Belum Diverifikasi',
-      'Nama Pendata Lapangan': (rec.statusKunjungan === 'Sudah Dikunjungi') ? (rec.namaPendata || rec.namaFasilitator || 'Petugas SLRT') : '',
       'Tanggal Verifikasi': (rec.statusKunjungan === 'Sudah Dikunjungi') ? (rec.tanggalPemeriksaan || '') : '',
       'Catatan Petugas Lapangan (Verifikasi)': rec.catatanPemeriksa || 'Belum ada catatan lapangan',
       'Status Verifikasi Kunjungan': rec.statusKunjungan || 'Belum Dikunjungi'
     }));
 
     // Construct metadata filename
-    let fileNamePrefix = 'Data_SLRT_KITO_Tanjungbalai';
+    let fileNamePrefix = 'Laporan_Terpadu_SLRT_KITO_Tanjungbalai';
     if (selectedFacilitatorFilter && selectedFacilitatorFilter !== 'all') {
-      fileNamePrefix += `_Petugas_${selectedFacilitatorFilter.replace(/\s+/g, '_')}`;
+      fileNamePrefix += `_Fas_${selectedFacilitatorFilter.replace(/\s+/g, '_')}`;
+    }
+    if (selectedPendataFilter && selectedPendataFilter !== 'all') {
+      fileNamePrefix += `_Pen_${selectedPendataFilter.replace(/\s+/g, '_')}`;
     }
     if (filterVerifStartDate || filterVerifEndDate) {
       fileNamePrefix += `_Verif_${filterVerifStartDate || 'Awal'}_to_${filterVerifEndDate || 'Akhir'}`;
@@ -1293,21 +1478,34 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
   };
 
   // Google Sheets Web App Synchronization (Real Integration)
-  const handleSyncToGoogleSheets = async (rec: SLRTRecord) => {
+  const handleSyncToGoogleSheets = async (rec: SLRTRecord, silent: boolean = false) => {
     setSyncingRecordId(rec.id);
+    if (silent) {
+      setBackgroundSyncStatus('syncing');
+      setSyncingTargetName(rec.namaKlien);
+    }
     try {
-      await fetch("https://script.google.com/macros/s/AKfycbzlB6khhYqh0J9skd_C2w6JMYhrJUIIBDxOM2N5IIcTemBQGrqlMTCQpfq3xt1BVUu9ZA/exec", {
+      await fetch(GOOGLE_SHEETS_API_URL, {
         method: "POST",
-        mode: "no-cors",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(rec)
+        body: JSON.stringify({
+          action: 'syncRecord',
+          data: rec
+        })
       });
-      alert(`Berhasil Mengirim Data!\nCatatan pemohon "${rec.namaKlien}" telah disinkronisasikan langsung ke Google Sheets Anda secara real-time.`);
+      if (silent) {
+        setBackgroundSyncStatus('success');
+        setTimeout(() => setBackgroundSyncStatus('idle'), 4000);
+      } else {
+        alert(`Berhasil Mengirim Data!\nCatatan pemohon "${rec.namaKlien}" telah disinkronisasikan langsung ke Google Sheets Anda secara real-time.`);
+      }
     } catch (err) {
       console.error(err);
-      alert("Gagal mensinkronisasikan data ke Google Sheets. Silakan periksa koneksi jaringan Anda.");
+      if (silent) {
+        setBackgroundSyncStatus('error');
+        setTimeout(() => setBackgroundSyncStatus('idle'), 4000);
+      } else {
+        alert("Gagal mensinkronisasikan data ke Google Sheets. Silakan periksa koneksi jaringan Anda.");
+      }
     } finally {
       setSyncingRecordId(null);
     }
@@ -1328,13 +1526,12 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     
     for (const rec of records) {
       try {
-        await fetch("https://script.google.com/macros/s/AKfycbzlB6khhYqh0J9skd_C2w6JMYhrJUIIBDxOM2N5IIcTemBQGrqlMTCQpfq3xt1BVUu9ZA/exec", {
+        await fetch(GOOGLE_SHEETS_API_URL, {
           method: "POST",
-          mode: "no-cors",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(rec)
+          body: JSON.stringify({
+            action: 'syncRecord',
+            data: rec
+          })
         });
         successCount++;
       } catch (err) {
@@ -1399,24 +1596,255 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         <head>
           <title>SLRT KITO - Laporan Pengaduan: ${selectedRecord.namaKlien}</title>
           <style>
-            body { font-family: 'Courier New', Courier, monospace; padding: 30px; color: #333; line-height: 1.5; }
-            .header-container { display: flex; align-items: center; justify-content: center; gap: 20px; border-bottom: 3px double #333; padding-bottom: 16px; margin-bottom: 24px; }
-            .header-logo { height: 80px; flex-shrink: 0; }
-            .header-text { text-align: center; flex-grow: 1; }
-            .header-text h1 { margin: 0; font-size: 18px; text-transform: uppercase; font-weight: bold; color: #111; }
-            .header-text h2 { margin: 3px 0 0; font-size: 20px; text-transform: uppercase; color: #0f766e; font-weight: bold; }
-            .header-text h3 { margin: 4px 0 0; font-size: 12px; font-weight: bold; color: #475569; }
-            .header-text p { margin: 2px 0 0; font-size: 10px; color: #64748b; }
-            .content-grid { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 15px; }
-            .field-row { display: flex; border-bottom: 1px dashed #ccc; padding: 6px 0; }
-            .label { width: 330px; font-weight: bold; }
-            .val { flex: 1; }
-            .footer { margin-top: 50px; text-align: right; font-size: 13px; }
-            .sig-space { height: 70px; }
-            .btn-print { background: #4f46e5; color: #fff; border: 0; padding: 8px 16px; border-radius: 4px; font-family: sans-serif; cursor: pointer; margin-bottom: 20px; font-weight: bold; transition: all 0.2s; }
-            .btn-print:hover { background: #4338ca; }
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+            body { 
+              font-family: 'Inter', sans-serif; 
+              padding: 40px; 
+              color: #1e293b; 
+              line-height: 1.5; 
+              background-color: #fff;
+              max-width: 800px;
+              margin: 0 auto;
+            }
+            .header-container { 
+              display: flex; 
+              align-items: center; 
+              justify-content: center; 
+              gap: 20px; 
+              border-bottom: 3px double #94a3b8; 
+              padding-bottom: 16px; 
+              margin-bottom: 24px; 
+            }
+            .header-logo { 
+              height: 75px; 
+              flex-shrink: 0; 
+            }
+            .header-text { 
+              text-align: center; 
+              flex-grow: 1; 
+            }
+            .header-text h1 { 
+              margin: 0; 
+              font-size: 16px; 
+              text-transform: uppercase; 
+              font-weight: 700; 
+              color: #1e293b; 
+              letter-spacing: 0.5px;
+            }
+            .header-text h2 { 
+              margin: 3px 0 0; 
+              font-size: 18px; 
+              text-transform: uppercase; 
+              color: #0f766e; 
+              font-weight: 700; 
+              letter-spacing: 0.5px;
+            }
+            .header-text h3 { 
+              margin: 4px 0 0; 
+              font-size: 10px; 
+              font-weight: 500; 
+              color: #64748b; 
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .header-text p { 
+              margin: 2px 0 0; 
+              font-size: 9px; 
+              color: #94a3b8; 
+            }
+            
+            .doc-title {
+              font-size: 14px;
+              font-weight: 700;
+              color: #0f172a;
+              margin-bottom: 4px;
+              text-transform: uppercase;
+            }
+            .doc-metadata {
+              font-size: 10px;
+              color: #64748b;
+              margin-bottom: 20px;
+              border-bottom: 1px solid #e2e8f0;
+              padding-bottom: 8px;
+            }
+            
+            .section-title {
+              background-color: #f1f5f9;
+              color: #0f766e;
+              font-size: 11px;
+              font-weight: 700;
+              padding: 6px 12px;
+              margin-top: 20px;
+              margin-bottom: 12px;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              border-radius: 4px;
+            }
+            
+            .info-table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 10px;
+            }
+            .info-table td {
+              padding: 6px 8px;
+              font-size: 11px;
+              vertical-align: top;
+              border-bottom: 1px solid #f8fafc;
+            }
+            .info-table td.label {
+              width: 32%;
+              font-weight: 600;
+              color: #64748b;
+            }
+            .info-table td.separator {
+              width: 3%;
+              color: #64748b;
+              text-align: center;
+              padding-right: 0;
+              padding-left: 0;
+            }
+            .info-table td.value {
+              width: 65%;
+              color: #1e293b;
+              word-break: break-word;
+            }
+            
+            .grid-2col {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 20px;
+            }
+
+            .row-fullwidth {
+              border-bottom: 1px solid #f1f5f9;
+              padding: 8px;
+              font-size: 11px;
+            }
+            .row-fullwidth .label {
+              font-weight: 600;
+              color: #64748b;
+              margin-bottom: 4px;
+            }
+            .row-fullwidth .value {
+              color: #1e293b;
+              white-space: pre-wrap;
+              line-height: 1.6;
+              word-break: break-word;
+            }
+
+            /* Section V Documentation */
+            .doc-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 20px;
+              margin-top: 10px;
+            }
+            .doc-card {
+              border: 1px solid #cbd5e1;
+              border-radius: 8px;
+              padding: 10px;
+              background-color: #f8fafc;
+              text-align: center;
+            }
+            .doc-img-container {
+              width: 100%;
+              height: 180px;
+              background-color: #e2e8f0;
+              border-radius: 6px;
+              margin-bottom: 8px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              overflow: hidden;
+              border: 1px dashed #94a3b8;
+            }
+            .doc-img {
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
+            }
+            .doc-placeholder {
+              color: #94a3b8;
+              font-size: 10px;
+              font-weight: 600;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 6px;
+            }
+            .doc-placeholder-icon {
+              font-size: 24px;
+            }
+            .doc-caption {
+              font-size: 10px;
+              font-weight: 700;
+              color: #334155;
+              margin-top: 4px;
+            }
+            .doc-subcaption {
+              font-size: 9px;
+              color: #64748b;
+              margin-top: 2px;
+            }
+
+            .signatures-container {
+              display: flex;
+              justify-content: space-between;
+              margin-top: 40px;
+              page-break-inside: avoid;
+            }
+            .sig-box {
+              text-align: center;
+              width: 250px;
+              font-size: 11px;
+            }
+            .sig-space {
+              height: 60px;
+            }
+            .sig-name {
+              font-weight: 700;
+              border-bottom: 1px solid #1e293b;
+              display: inline-block;
+              padding-bottom: 2px;
+              min-width: 180px;
+              margin-top: 10px;
+            }
+            
+            .footer-disclaimer {
+              margin-top: 40px;
+              border-top: 1px solid #e2e8f0;
+              padding-top: 8px;
+              font-size: 8px;
+              font-style: italic;
+              color: #94a3b8;
+              display: flex;
+              justify-content: space-between;
+              page-break-inside: avoid;
+            }
+
+            .btn-print { 
+              background: #0f766e; 
+              color: #fff; 
+              border: 0; 
+              padding: 10px 20px; 
+              border-radius: 8px; 
+              font-family: inherit; 
+              font-size: 12px;
+              cursor: pointer; 
+              margin-bottom: 20px; 
+              font-weight: 600; 
+              transition: all 0.2s; 
+              box-shadow: 0 4px 6px -1px rgba(15, 118, 110, 0.2);
+            }
+            .btn-print:hover { 
+              background: #0d5c56; 
+              box-shadow: 0 4px 12px -1px rgba(15, 118, 110, 0.3);
+            }
             @media print {
               .btn-print { display: none; }
+              body { padding: 0; }
+              .doc-card { page-break-inside: avoid; }
             }
           </style>
         </head>
@@ -1433,39 +1861,191 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
             </div>
           </div>
           
-          <div class="content-grid">
-            <div class="field-row"><div class="label">1. Nama Fasilitator</div><div class="val">: ${selectedRecord.namaFasilitator}</div></div>
-            <div class="field-row"><div class="label">2. Kelurahan</div><div class="val">: ${selectedRecord.kelurahan}</div></div>
-            <div class="field-row"><div class="label">3. Kecamatan</div><div class="val">: ${selectedRecord.kecamatan}</div></div>
-            <div class="field-row"><div class="label">4. Hari/Tanggal</div><div class="val">: ${selectedRecord.hariTanggal}</div></div>
-            <div class="field-row"><div class="label">5. Nama Klien</div><div class="val">: <strong>${selectedRecord.namaKlien}</strong></div></div>
-            <div class="field-row"><div class="label">6. Pekerjaan KRT</div><div class="val">: ${selectedRecord.pekerjaanKrt}</div></div>
-            <div class="field-row"><div class="label">7. Nama Kuasa</div><div class="val">: ${selectedRecord.namaKuasa}</div></div>
-            <div class="field-row"><div class="label">8. Alamat Klien</div><div class="val">: ${selectedRecord.alamatKlien}</div></div>
-            <div class="field-row"><div class="label">9. No Telpon</div><div class="val">: ${selectedRecord.noTelpon}</div></div>
-            <div class="field-row"><div class="label">10. Dokumen Dibawa</div><div class="val">: ${selectedRecord.dokumen}</div></div>
-            <div class="field-row"><div class="label">11. Status Sosial</div><div class="val">: ${selectedRecord.status}</div></div>
-            <div class="field-row"><div class="label">12. Bantuan yang Sudah Diperoleh</div><div class="val">: ${selectedRecord.bantuanDiterima}</div></div>
-            <div class="field-row"><div class="label">13. Status Kepemilikan Rumah</div><div class="val">: ${selectedRecord.statusRumah}</div></div>
-            <div class="field-row"><div class="label">14. Jenis Penerangan</div><div class="val">: ${selectedRecord.jenisPenerangan}</div></div>
-            <div class="field-row"><div class="label">15. MCK</div><div class="val">: ${selectedRecord.mck}</div></div>
-            <div class="field-row"><div class="label">16. Pendapatan Perbulan</div><div class="val">: ${selectedRecord.pendapatanPerbulan}</div></div>
-            <div class="field-row"><div class="label">17. Jenis Pengaduan</div><div class="val">: ${selectedRecord.jenisPengaduan}</div></div>
-            <div class="field-row"><div class="label">18. Jenis Layanan yang Diinginkan</div><div class="val">: ${selectedRecord.jenisLayanan}</div></div>
+          <div class="doc-title">FORMULIR REGISTER & VERIFIKASI PENGADUAN KLIEN</div>
+          <div class="doc-metadata">
+            ID Dokumen: ${selectedRecord.id} &nbsp;|&nbsp; Penginput: ${selectedRecord.diinputOleh || 'Admin'}
+          </div>
+
+          <div class="section-title">I. IDENTITAS UTAMA PENGADU & KLIEN</div>
+          <div class="grid-2col">
+            <table class="info-table">
+              <tr>
+                <td class="label">Nama Klien</td>
+                <td class="separator">:</td>
+                <td class="value"><strong>${selectedRecord.namaKlien}</strong></td>
+              </tr>
+              <tr>
+                <td class="label">No. HP/WA Active</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.noTelpon}</td>
+              </tr>
+              <tr>
+                <td class="label">Penerima Kuasa</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.namaKuasa || '-'}</td>
+              </tr>
+              <tr>
+                <td class="label">Kelengkapan Berkas</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.dokumen}</td>
+              </tr>
+            </table>
+
+            <table class="info-table">
+              <tr>
+                <td class="label">Kecamatan / Kel.</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.kecamatan} / ${selectedRecord.kelurahan}</td>
+              </tr>
+              <tr>
+                <td class="label">Pekerjaan Kepala RT</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.pekerjaanKrt || '-'}</td>
+              </tr>
+              <tr>
+                <td class="label">Estimasi Pendapatan</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.pendapatanPerbulan || '-'}</td>
+              </tr>
+              <tr>
+                <td class="label">Status Sosial</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.status}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="row-fullwidth">
+            <div class="label">Alamat Lengkap</div>
+            <div class="value">${selectedRecord.alamatKlien}</div>
+          </div>
+
+          <div class="section-title">II. FASILITAS HUNIAN & INTEGRASI BANTUAN</div>
+          <div class="grid-2col">
+            <table class="info-table">
+              <tr>
+                <td class="label">Rumah Kepemilikan</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.statusRumah}</td>
+              </tr>
+              <tr>
+                <td class="label">Akses Sanitasi / MCK</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.mck}</td>
+              </tr>
+            </table>
+
+            <table class="info-table">
+              <tr>
+                <td class="label">Sumber Penerangan</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.jenisPenerangan}</td>
+              </tr>
+              <tr>
+                <td class="label">Bansos Sedang Aktif</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.bantuanDiterima || 'Belum Terdaftar'}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="section-title">III. DETAIL KASUS ADUAN & RUJUKAN</div>
+          <div class="grid-2col">
+            <table class="info-table">
+              <tr>
+                <td class="label">Jenis Layanan Tujuan</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.jenisLayanan}</td>
+              </tr>
+            </table>
+            <table class="info-table">
+              <tr>
+                <td class="label">Fasilitator Terkait</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.namaFasilitator}</td>
+              </tr>
+            </table>
+          </div>
+          <div class="row-fullwidth">
+            <div class="label">Deskripsi Keluhan</div>
+            <div class="value">${selectedRecord.jenisPengaduan}</div>
+          </div>
+
+          <div class="section-title">IV. STATUS VERIFIKASI FISIK & LAPANGAN (AUDIT)</div>
+          <div class="grid-2col">
+            <table class="info-table">
+              <tr>
+                <td class="label">Status Kunjungan</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.statusKunjungan || 'Belum Dikunjungi'}</td>
+              </tr>
+            </table>
+            <table class="info-table">
+              <tr>
+                <td class="label">Tanggal Pemeriksaan</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.tanggalPemeriksaan || 'Belum Diperiksa'}</td>
+              </tr>
+            </table>
+          </div>
+          <div class="row-fullwidth">
+            <div class="label">Catatan Pengawas</div>
+            <div class="value">${selectedRecord.catatanPemeriksa || 'Belum ada catatan verifikasi fisik lapangan dari petugas terkait.'}</div>
+          </div>
+
+          <div class="section-title">V. DOKUMENTASI HASIL VERIFIKASI LAPORAN</div>
+          <div class="doc-grid">
+            <div class="doc-card">
+              <div class="doc-img-container">
+                ${selectedRecord.statusKunjungan === 'Sudah Dikunjungi' && (selectedRecord.fotoDepanRumah || selectedRecord.dokumentasiBukti) ? `
+                  <img class="doc-img" src="${selectedRecord.fotoDepanRumah || selectedRecord.dokumentasiBukti}" />
+                ` : `
+                  <div class="doc-placeholder">
+                    <span class="doc-placeholder-icon">🏠</span>
+                    <span>Foto Kondisi Rumah Klien</span>
+                    <span style="font-size: 8px; color: #94a3b8; font-weight: normal; margin-top: 4px;">(Belum Diunggah)</span>
+                  </div>
+                `}
+              </div>
+              <div class="doc-caption">Foto 1: Kondisi Kelayakan Hunian</div>
+              <div class="doc-subcaption">Kondisi fisik luar dan perumahan klien</div>
+            </div>
+
+            <div class="doc-card">
+              <div class="doc-img-container">
+                ${selectedRecord.statusKunjungan === 'Sudah Dikunjungi' && selectedRecord.fotoKkKtp ? `
+                  <img class="doc-img" src="${selectedRecord.fotoKkKtp}" />
+                ` : `
+                  <div class="doc-placeholder">
+                    <span class="doc-placeholder-icon">📄</span>
+                    <span>Foto KK / KTP Klien</span>
+                    <span style="font-size: 8px; color: #94a3b8; font-weight: normal; margin-top: 4px;">(Belum Diunggah)</span>
+                  </div>
+                `}
+              </div>
+              <div class="doc-caption">Foto 2: Berkas Kependudukan</div>
+              <div class="doc-subcaption">Arsip administrasi resmi KK/KTP terverifikasi</div>
+            </div>
+          </div>
+
+          <div class="signatures-container">
+            <div class="sig-box">
+              <p>Petugas Fasilitator Pendata,</p>
+              <p>Dinas Sosial Tanjungbalai</p>
+              <div class="sig-space"></div>
+              <div class="sig-name">${selectedRecord.namaFasilitator}</div>
+            </div>
+            <div class="sig-box">
+              <p>Tanjungbalai, ${selectedRecord.hariTanggal.split(',')[1] || '_________________'}</p>
+              <p>Klien / Penerima Layanan</p>
+              <div class="sig-space"></div>
+              <div class="sig-name">${selectedRecord.namaKlien}</div>
+            </div>
           </div>
           
-          <div style="display: flex; justify-content: space-between; margin-top: 65px;">
-            <div style="text-align: center; width: 230px;">
-              <p>Masyarakat / Pemohon</p>
-              <div class="sig-space"></div>
-              <p>( ____________________ )</p>
-            </div>
-            <div style="text-align: center; width: 230px;">
-              <p>Tanjungbalai, ${selectedRecord.hariTanggal.split(',')[1] || '_________________'}</p>
-              <p>Fasilitator Pendata</p>
-              <div class="sig-space"></div>
-              <p><strong>( ${selectedRecord.namaFasilitator} )</strong></p>
-            </div>
+          <div class="footer-disclaimer">
+            <span>Pernyataan: Dokumen ini divalidasi sah secara elektronik oleh Sistem Layanan dan Rujukan Terpadu SLRT KITO Kota Tanjungbalai.</span>
+            <span>SLRT KITO</span>
           </div>
         </body>
       </html>
@@ -1505,6 +2085,50 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           resolve('');
         };
         img.src = 'https://upload.wikimedia.org/wikipedia/commons/9/90/LOGO_KOTA_TANJUNG_BALAI.png';
+      });
+    };
+
+    // Helper to load any internal base64 or external url with timeout
+    const loadAnyImageBase64 = (srcUrl: string): Promise<string> => {
+      return new Promise((resolve) => {
+        if (!srcUrl) {
+          resolve('');
+          return;
+        }
+        if (srcUrl.startsWith('data:')) {
+          resolve(srcUrl);
+          return;
+        }
+        
+        // Timeout to prevent hanging
+        const timeoutId = setTimeout(() => {
+          resolve('');
+        }, 1200);
+
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => {
+          clearTimeout(timeoutId);
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0);
+              resolve(canvas.toDataURL('image/jpeg'));
+            } else {
+              resolve('');
+            }
+          } catch (e) {
+            resolve('');
+          }
+        };
+        img.onerror = () => {
+          clearTimeout(timeoutId);
+          resolve('');
+        };
+        img.src = srcUrl;
       });
     };
 
@@ -1565,29 +2189,49 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       doc.setFontSize(8.5);
       doc.setTextColor(15, 118, 110);
       doc.text(title, 18, y + 4.5);
+      return y + 10;
     };
 
     const drawRow = (y: number, label1: string, val1: string, label2?: string, val2?: string) => {
+      // Column 1 stars at x=18. Label limited to 32mm. Value limited to 53mm
+      // Column 2 starts at x=110. Label limited to 32mm. Value limited to 51mm
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(100, 116, 139);
-      doc.text(label1, 18, y);
-      
-      if (label2) {
-        doc.text(label2, 110, y);
-      }
+      const label1Lines = doc.splitTextToSize(label1, 32);
+      doc.text(label1Lines, 18, y);
       
       doc.setFont('Helvetica', 'normal');
       doc.setTextColor(30, 41, 59);
-      doc.text(`: ${val1 || '-'}`, 52, y);
+      doc.text(':', 50, y);
+      const val1Lines = doc.splitTextToSize(val1 || '-', 53);
+      doc.text(val1Lines, 52, y);
       
-      if (label2 && val2) {
-        doc.text(`: ${val2 || '-'}`, 144, y);
+      let col1Height = Math.max(label1Lines.length, val1Lines.length) * 4;
+      let col2Height = 0;
+      
+      if (label2) {
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139);
+        const label2Lines = doc.splitTextToSize(label2, 32);
+        doc.text(label2Lines, 110, y);
+        
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(30, 41, 59);
+        doc.text(':', 142, y);
+        const val2Lines = doc.splitTextToSize(val2 || '-', 51);
+        doc.text(val2Lines, 144, y);
+        
+        col2Height = Math.max(label2Lines.length, val2Lines.length) * 4;
       }
       
+      const rowHeight = Math.max(col1Height, col2Height, 5.5);
+      const nextY = y + rowHeight;
       doc.setDrawColor(241, 245, 249);
       doc.setLineWidth(0.1);
-      doc.line(15, y + 2, 195, y + 2);
+      doc.line(15, nextY, 195, nextY);
+      return nextY + 3.5;
     };
 
     const drawRowFullWidth = (y: number, label: string, val: string) => {
@@ -1607,37 +2251,141 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       doc.setDrawColor(241, 245, 249);
       doc.setLineWidth(0.1);
       doc.line(15, nextY, 195, nextY);
-      return nextY;
+      return nextY + 3.5;
     };
 
     // SECTION I
-    drawSectionHeader(55, 'I. IDENTITAS UTAMA PENGADU & KLIEN');
-    drawRow(66, 'Nama Lengkap Klien', rec.namaKlien, 'Kecamatan / Kel.', `${rec.kecamatan} / ${rec.kelurahan}`);
-    drawRow(71, 'No. HP/WA Active', rec.noTelpon, 'Pekerjaan Kepala RT', rec.pekerjaanKrt);
-    drawRow(76, 'Penerima Kuasa', rec.namaKuasa, 'Estimasi Pendapatan', rec.pendapatanPerbulan);
-    drawRow(81, 'Kelengkapan Berkas', rec.dokumen, 'Status Sosial', rec.status);
-    const alamatY = drawRowFullWidth(86, 'Alamat Lengkap', rec.alamatKlien);
+    let currentY = 55;
+    currentY = drawSectionHeader(currentY, 'I. IDENTITAS UTAMA PENGADU & KLIEN');
+    currentY = drawRow(currentY, 'Nama Lengkap Klien', rec.namaKlien, 'Kecamatan / Kel.', `${rec.kecamatan} / ${rec.kelurahan}`);
+    currentY = drawRow(currentY, 'No. HP/WA Active', rec.noTelpon, 'Pekerjaan Kepala RT', rec.pekerjaanKrt);
+    currentY = drawRow(currentY, 'Penerima Kuasa', rec.namaKuasa, 'Estimasi Pendapatan', rec.pendapatanPerbulan);
+    currentY = drawRow(currentY, 'Kelengkapan Berkas', rec.dokumen, 'Status Sosial', rec.status);
+    currentY = drawRowFullWidth(currentY, 'Alamat Lengkap', rec.alamatKlien);
 
     // SECTION II
-    const sec2Y = alamatY + 5;
-    drawSectionHeader(sec2Y, 'II. FASILITAS HUNIAN & INTEGRASI BANTUAN');
-    drawRow(sec2Y + 11, 'Rumah Kepemilikan', rec.statusRumah, 'Sumber Penerangan', rec.jenisPenerangan);
-    drawRow(sec2Y + 16, 'Akses Sanitasi / MCK', rec.mck, 'Bansos Sedang Aktif', rec.bantuanDiterima || 'Belum Terdaftar');
+    currentY = drawSectionHeader(currentY + 4, 'II. FASILITAS HUNIAN & INTEGRASI BANTUAN');
+    currentY = drawRow(currentY, 'Rumah Kepemilikan', rec.statusRumah, 'Sumber Penerangan', rec.jenisPenerangan);
+    currentY = drawRow(currentY, 'Akses Sanitasi / MCK', rec.mck, 'Bansos Sedang Aktif', rec.bantuanDiterima || 'Belum Terdaftar');
 
     // SECTION III
-    const sec3Y = sec2Y + 23;
-    drawSectionHeader(sec3Y, 'III. DETAIL KASUS ADUAN & RUJUKAN');
-    drawRow(sec3Y + 11, 'Jenis Layanan Tujuan', rec.jenisLayanan, 'Fasilitator Terkait', rec.namaFasilitator);
-    const complaintsY = drawRowFullWidth(sec3Y + 16, 'Deskripsi Keluhan', rec.jenisPengaduan);
+    currentY = drawSectionHeader(currentY + 4, 'III. DETAIL KASUS ADUAN & RUJUKAN');
+    currentY = drawRow(currentY, 'Jenis Layanan Tujuan', rec.jenisLayanan, 'Fasilitator Terkait', rec.namaFasilitator);
+    currentY = drawRowFullWidth(currentY, 'Deskripsi Keluhan', rec.jenisPengaduan);
 
     // SECTION IV
-    const sec4Y = complaintsY + 5;
-    drawSectionHeader(sec4Y, 'IV. STATUS VERIFIKASI FISIK & LAPANGAN (AUDIT)');
-    drawRow(sec4Y + 11, 'Status Kunjungan', rec.statusKunjungan || 'Belum Dikunjungi', 'Tanggal Pemeriksaan', rec.tanggalPemeriksaan || 'Belum Diperiksa');
-    const finalDescY = drawRowFullWidth(sec4Y + 16, 'Catatan Pengawas', rec.catatanPemeriksa || 'Belum ada catatan verifikasi fisik lapangan dari petugas terkait.');
+    currentY = drawSectionHeader(currentY + 4, 'IV. STATUS VERIFIKASI FISIK & LAPANGAN (AUDIT)');
+    currentY = drawRow(currentY, 'Status Kunjungan', rec.statusKunjungan || 'Belum Dikunjungi', 'Tanggal Pemeriksaan', rec.tanggalPemeriksaan || 'Belum Diperiksa');
+    currentY = drawRowFullWidth(currentY, 'Catatan Pengawas', rec.catatanPemeriksa || 'Belum ada catatan verifikasi fisik lapangan dari petugas terkait.');
 
-    // SIGNATURES Section
-    const sigY = Math.min(finalDescY + 12, 240); // prevent overflow beyond height of A4 (297)
+    // Page overflow checking for Section V & signatures
+    // Approximate remaining heights: Header(10) + Photo Boxes(44) + captions(8) = 62mm
+    // Signatures take ~30mm. Total = 92mm.
+    // If currentY is greater than 185, we split to page 2.
+    let totalPageCount = 1;
+    if (currentY > 185) {
+      doc.addPage();
+      totalPageCount = 2;
+      currentY = 25; // Reset currentY for Page 2
+      
+      // Draw dynamic top header line on page 2
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Klien: ${rec.namaKlien}   |   ID Dokumen: ${rec.id}`, 15, 14);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.2);
+      doc.line(15, 16, 195, 16);
+      currentY = 22;
+    }
+
+    // SECTION V
+    currentY = drawSectionHeader(currentY, 'V. DOKUMENTASI HASIL VERIFIKASI LAPORAN');
+    
+    const boxWidth = 80;
+    const boxHeight = 44;
+    const boxY = currentY + 3;
+    
+    // Column 1 Box
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.2);
+    doc.setFillColor(248, 250, 252);
+    doc.rect(16, boxY, boxWidth, boxHeight, 'FD');
+    
+    // Column 2 Box
+    doc.rect(114, boxY, boxWidth, boxHeight, 'FD');
+
+    // Helper to draw geometric placeholder graphics with camera icon
+    const drawPhotoPlaceholder = (x: number, y: number, w: number, h: number, title: string) => {
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.rect(x + 2, y + 2, w - 4, h - 4); // Inner border
+      
+      const cx = x + (w / 2);
+      const cy = y + (h / 2) - 3;
+      doc.setFillColor(241, 245, 249);
+      doc.rect(cx - 6, cy - 4, 12, 8, 'F');
+      
+      // Draw camera lens circle
+      doc.setDrawColor(148, 163, 184);
+      doc.setLineWidth(0.5);
+      doc.circle(cx, cy, 2);
+      
+      // Flash bar
+      doc.setFillColor(148, 163, 184);
+      doc.rect(cx - 3, cy - 6, 6, 1.5, 'F');
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text(title, cx, cy + 9, { align: 'center' });
+      
+      doc.setFont('Helvetica', 'italic');
+      doc.setFontSize(6);
+      doc.text('Bukti Verifikasi Lapangan (GPS Stamped)', cx, cy + 13, { align: 'center' });
+    };
+
+    // Load actual photographs with crossOrigin safety
+    const img1Base64 = await loadAnyImageBase64(rec.fotoDepanRumah || rec.dokumentasiBukti || '');
+    const img2Base64 = await loadAnyImageBase64(rec.fotoKkKtp || '');
+
+    if (img1Base64) {
+      try {
+        doc.addImage(img1Base64, 'JPEG', 16.5, boxY + 0.5, boxWidth - 1, boxHeight - 1);
+      } catch (err) {
+        drawPhotoPlaceholder(16, boxY, boxWidth, boxHeight, 'FOTO KONDISI RUMAH KLIEN');
+      }
+    } else {
+      drawPhotoPlaceholder(16, boxY, boxWidth, boxHeight, 'FOTO KONDISI RUMAH KLIEN');
+    }
+
+    if (img2Base64) {
+      try {
+        doc.addImage(img2Base64, 'JPEG', 114.5, boxY + 0.5, boxWidth - 1, boxHeight - 1);
+      } catch (err) {
+        drawPhotoPlaceholder(114, boxY, boxWidth, boxHeight, 'FOTO KK / KTP KLIEN');
+      }
+    } else {
+      drawPhotoPlaceholder(114, boxY, boxWidth, boxHeight, 'FOTO KK / KTP KLIEN');
+    }
+
+    // Captions below photos
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(51, 65, 85);
+    doc.text('Foto 1: Kondisi Kelayakan Hunian', 16, boxY + boxHeight + 4);
+    doc.text('Foto 2: Berkas Kependudukan', 114, boxY + boxHeight + 4);
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Survei lapangan kondisi tempat tinggal Klien.', 16, boxY + boxHeight + 7);
+    doc.text('Arsip administrasi KK/KTP yang divalidasi.', 114, boxY + boxHeight + 7);
+
+    currentY = boxY + boxHeight + 11;
+
+    // Put signatures in a safe place
+    const sigY = currentY + 4;
 
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(8);
@@ -1657,16 +2405,26 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     doc.setFont('Helvetica', 'bold');
     doc.text(`( ${rec.namaKlien} )`, 135, sigY + 24);
 
-    // Footer lines
-    doc.setDrawColor(226, 232, 240);
-    doc.setLineWidth(0.3);
-    doc.line(15, 280, 195, 280);
+    // DRAW FOOTERS DYNAMICALLY
+    const drawPageFooter = (pageNum: number, totalPages: number) => {
+      doc.setPage(pageNum);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(15, 280, 195, 280);
 
-    doc.setFont('Helvetica', 'italic');
-    doc.setFontSize(7.5);
-    doc.setTextColor(148, 163, 184);
-    doc.text('Pernyataan: Dokumen ini divalidasi sah secara elektronik oleh Sistem Layanan dan Rujukan Terpadu SLRT KITO Kota Tanjungbalai.', 15, 284);
-    doc.text('Halaman 1 dari 1', 195, 284, { align: 'right' });
+      doc.setFont('Helvetica', 'italic');
+      doc.setFontSize(7.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text('Pernyataan: Dokumen ini divalidasi sah secara elektronik oleh Sistem Layanan dan Rujukan Terpadu SLRT KITO Kota Tanjungbalai.', 15, 284);
+      doc.text(`Halaman ${pageNum} dari ${totalPages}`, 195, 284, { align: 'right' });
+    };
+
+    if (totalPageCount === 1) {
+      drawPageFooter(1, 1);
+    } else {
+      drawPageFooter(1, 2);
+      drawPageFooter(2, 2);
+    }
 
     // Download PDF triggers
     doc.save(`SLRT_KITO_Layanan_${rec.namaKlien.replace(/\s+/g, '_')}_${rec.id}.pdf`);
@@ -1684,6 +2442,28 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           <div>
             <h1 className="text-base font-extrabold leading-none text-slate-900 tracking-tight font-display">SLRT KITO</h1>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mt-0.5">Sistem Layanan Rujukan Terpadu</p>
+          </div>
+          
+          {/* Cloud Database Synchronization Indicator */}
+          <div className="ml-4 pl-4 border-l border-slate-200 hidden md:flex items-center gap-2">
+            <button
+              onClick={() => refreshFromCloud(true)}
+              disabled={cloudLoading}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all ${
+                cloudLoading 
+                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed scale-98 animate-pulse'
+                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100/80 active:scale-95 cursor-pointer'
+              }`}
+              title="Klik untuk mensinkronisasi data langsung dengan Google Sheets secara real-time"
+            >
+              <span className={`w-2 h-2 rounded-full ${cloudLoading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`} />
+              {cloudLoading ? 'Menyinkronkan...' : 'Database Terhubung'}
+            </button>
+            {lastCloudSync && (
+              <span className="text-[10px] text-slate-400 font-mono">
+                Aktif: {lastCloudSync}
+              </span>
+            )}
           </div>
         </div>
         
@@ -2691,17 +3471,37 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
                 {/* filter by facilitator / petugas */}
                 <div>
+                  <span className="text-[9px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Fasilitator Lapangan :</span>
                   <select
                     value={selectedFacilitatorFilter}
                     onChange={(e) => setSelectedFacilitatorFilter(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg text-[10px] p-1.5 focus:border-indigo-500 text-slate-755 outline-none font-semibold text-slate-700 hover:border-slate-300 transition-colors"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg text-[10px] p-1.5 focus:border-indigo-500 text-slate-700 outline-none font-semibold hover:border-slate-300 transition-colors"
                   >
-                    <option value="all">Saring Berdasarkan Petugas Penginput &amp; Pendata (Semua)</option>
+                    <option value="all">Semua Fasilitator Lapangan</option>
                     <option value="Ahmad Fauzi">Ahmad Fauzi</option>
                     <option value="Siti Rahma">Siti Rahma</option>
                     <option value="Budi Hartono">Budi Hartono</option>
                     {facilitators.filter(f => f.status === 'APPROVED' && !['Ahmad Fauzi', 'Siti Rahma', 'Budi Hartono'].includes(f.name)).map(f => (
                       <option key={f.id} value={f.name}>{f.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* filter by pendata / verifier */}
+                <div>
+                  <span className="text-[9px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Nama Pendata (Verifier) :</span>
+                  <select
+                    value={selectedPendataFilter}
+                    onChange={(e) => setSelectedPendataFilter(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg text-[10px] p-1.5 focus:border-indigo-500 text-slate-700 outline-none font-semibold hover:border-slate-300 transition-colors"
+                  >
+                    <option value="all">Semua Petugas Pendata (Verifier)</option>
+                    <option value="Ahmad Fauzi">Ahmad Fauzi</option>
+                    <option value="Siti Rahma">Siti Rahma</option>
+                    <option value="Budi Hartono">Budi Hartono</option>
+                    <option value="BOY GULO">BOY GULO</option>
+                    {Array.from(new Set<string>(records.map(r => r.namaPendata || '').filter(Boolean))).filter((name) => !['Ahmad Fauzi', 'Siti Rahma', 'Budi Hartono', 'BOY GULO'].includes(name)).map(name => (
+                      <option key={name} value={name}>{name}</option>
                     ))}
                   </select>
                 </div>
@@ -2935,7 +3735,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
             <div className="bg-white p-2.5 rounded-xl border border-slate-200 text-[10px] text-slate-650 flex flex-col gap-1.5 shadow-xs">
               <p className="font-extrabold text-slate-800 uppercase tracking-wider text-[8px] text-slate-500">Status Saringan Saat Ini:</p>
               <div className="flex flex-col gap-1 text-[9px] font-semibold font-mono text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-150">
-                <div>• Petugas (Penginput &amp; Pendata): <b className="text-indigo-600">{selectedFacilitatorFilter === 'all' ? 'Semua Petugas' : selectedFacilitatorFilter}</b></div>
+                <div>• Fasilitator Lapangan: <b className="text-indigo-600">{selectedFacilitatorFilter === 'all' ? 'Semua Fasilitator' : selectedFacilitatorFilter}</b></div>
+                <div>• Nama Pendata (Verifier): <b className="text-teal-600">{selectedPendataFilter === 'all' ? 'Semua Pendata' : selectedPendataFilter}</b></div>
                 <div>• Periode: <b className="text-slate-700">
                   {filterStartMonth || filterStartYear || filterEndMonth || filterEndYear ? (
                     `${filterStartMonth ? `Bln ${filterStartMonth}` : ''} ${filterStartYear || ''} - ${filterEndMonth ? `Bln ${filterEndMonth}` : ''} ${filterEndYear || ''}`
@@ -2952,21 +3753,24 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               </div>
 
               {/* Advanced Export Buttons */}
-              <div className="grid grid-cols-2 gap-2 mt-1">
-                <button 
-                  onClick={() => handleAdvancedExport('CSV')}
-                  className="bg-slate-800 text-white hover:bg-slate-900 py-2 px-1 text-[9px] font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all uppercase tracking-wide shadow-xs"
-                  title="Unduh data terseleksi dalam format .CSV standar"
-                >
-                  📄 File .CSV
-                </button>
+              <div className="flex flex-col gap-1.5 mt-1.5">
                 <button 
                   onClick={() => handleAdvancedExport('xlsx')}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-1 text-[9px] font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all uppercase tracking-wide shadow-xs"
-                  title="Unduh data terseleksi dalam format .XLSX Excel"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-2.5 text-[9.5px] font-black rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all uppercase tracking-wide shadow-md active:scale-[0.99]"
+                  title="Unduh data terseleksi dalam format Excel dengan filter aktif"
                 >
-                  🟢 Excel .XLSX
+                  🟢 Ekspor Laporan Terpadu Petugas
                 </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <span className="col-span-2 text-[8px] text-slate-400 text-center font-semibold">Unduh Format Alternatif:</span>
+                  <button 
+                    onClick={() => handleAdvancedExport('CSV')}
+                    className="col-span-2 bg-slate-800 text-white hover:bg-slate-900 py-1.5 px-2 text-[9px] font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all uppercase tracking-wide shadow-xs"
+                    title="Unduh data terseleksi dalam format CSV"
+                  >
+                    📄 Unduh CSV Terpadu
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -3817,6 +4621,31 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* BACKGROUND AUTO-SYNC TOAST NOTIFICATION */}
+      {backgroundSyncStatus !== 'idle' && (
+        <div className="fixed bottom-12 right-6 bg-slate-900 border border-slate-800 text-white p-3.5 rounded-2xl shadow-2xl z-50 flex items-center gap-3 font-sans max-w-sm transition-all duration-350 transform scale-100 animate-slideUp">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-indigo-600">
+            {backgroundSyncStatus === 'syncing' && (
+              <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+            )}
+            {backgroundSyncStatus === 'success' && (
+              <span className="text-white text-xs font-bold font-sans">✓</span>
+            )}
+            {backgroundSyncStatus === 'error' && (
+              <span className="text-red-300 text-xs font-bold font-sans">✕</span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h5 className="text-[10px] font-black tracking-wider uppercase text-slate-400 leading-none">Sinkronisasi Database Cloud</h5>
+            <p className="text-[11px] font-bold text-slate-100 mt-1 leading-tight truncate">
+              {backgroundSyncStatus === 'syncing' && `Mengirim data "${syncingTargetName}" ke Google Sheets...`}
+              {backgroundSyncStatus === 'success' && `Data "${syncingTargetName}" tersimpan otomatis!`}
+              {backgroundSyncStatus === 'error' && `Koneksi Google Sheets terputus!`}
+            </p>
           </div>
         </div>
       )}

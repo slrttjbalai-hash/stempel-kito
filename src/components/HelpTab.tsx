@@ -99,8 +99,118 @@ function onOpen() {
   ui.createMenu("🟢 Menu SLRT KITO")
     .addItem("Inisialisasi & Format Ulang Tabel", "setupSheet")
     .addSeparator()
-    .addItem("Rapikan Baris & Format Status", "autofitAndStyleRows")
+    .addItem("Saring &amp; Ekspor Laporan Terpadu", "filterAndExportIntegrated")
+    .addItem("Rapikan Baris &amp; Format Status", "autofitAndStyleRows")
     .addToUi();
+}
+
+// Fungsi Saring & Ekspor Terpadu (Fasilitator AND/OR Pendata)
+function filterAndExportIntegrated() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("❌ Error: Tabel Laporan SLRT KITO tidak ditemukan. Silakan lakukan inisialisasi terlebih dahulu!");
+    return;
+  }
+  
+  const ui = SpreadsheetApp.getUi();
+  
+  // Prompt untuk nama Fasilitator Lapangan
+  const responseFas = ui.prompt(
+    "1/2: Saringan Fasilitator Lapangan",
+    "Masukkan nama Fasilitator Lapangan (Penginput) yang ingin disaring.\nKetik 'Semua' untuk mengabaikan saringan ini:",
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (responseFas.getSelectedButton() !== ui.Button.OK) return;
+  let targetFas = responseFas.getResponseText().trim();
+  if (!targetFas) targetFas = "Semua";
+  
+  // Prompt untuk nama Pendata Lapangan
+  const responsePen = ui.prompt(
+    "2/2: Saringan Petugas Pendata (Verifier)",
+    "Masukkan nama Petugas Pendata (Verifier) yang ingin disaring.\nKetik 'Semua' untuk mengabaikan saringan ini:",
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (responsePen.getSelectedButton() !== ui.Button.OK) return;
+  let targetPen = responsePen.getResponseText().trim();
+  if (!targetPen) targetPen = "Semua";
+  
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    ui.alert("⚠️ Tidak ada data untuk disaring.");
+    return;
+  }
+  
+  const dataRange = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn());
+  const values = dataRange.getValues();
+  const filteredValues = [];
+  
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    const fasVal = String(row[21]).trim(); // Kolom V (Petugas Penginput / Fasilitator)
+    const penVal = String(row[22]).trim(); // Kolom W (Petugas Pendata / Verifier)
+    
+    let matchFas = true;
+    if (targetFas.toLowerCase() !== "semua" && targetFas !== "") {
+      matchFas = (fasVal.toLowerCase() === targetFas.toLowerCase());
+    }
+    
+    let matchPen = true;
+    if (targetPen.toLowerCase() !== "semua" && targetPen !== "") {
+      matchPen = (penVal.toLowerCase() === targetPen.toLowerCase());
+    }
+    
+    if (matchFas && matchPen) {
+      filteredValues.push(row);
+    }
+  }
+  
+  if (filteredValues.length === 0) {
+    ui.alert("⚠️ Data tidak ditemukan untuk kombinasi petugas tersebut:\nFasilitator: " + targetFas + "\nPendata: " + targetPen);
+    return;
+  }
+  
+  // Buat Sheet Laporan Terpadu Baru
+  const timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyyMMdd_HHmmss");
+  const newSheetName = "Laporan_Terpadu_" + timestamp;
+  const newSheet = ss.insertSheet(newSheetName);
+  
+  // Tulis Header
+  const headers = [
+    "ID Record", "Kecamatan", "Kelurahan", "Hari/Tanggal Input", "Nama Klien",
+    "Pekerjaan Kepala RT", "Nama Kuasa (Wakil)", "Alamat Lengkap", "No HP / WhatsApp",
+    "Kebutuhan Berkas", "Skenario Kerentanan", "Bantuan Sosial Aktif", "Status Kepemilikan Rumah",
+    "Sumber Penerangan Utama", "Kondisi Fasilitas Sanitasi MCK", "Penghasilan Bulanan",
+    "Deskripsi Pengaduan", "Jenis Usulan Layanan", "Status Verifikasi Kunjungan",
+    "Tanggal Verifikasi", "Catatan Petugas Lapangan", "Petugas Penginput", "Petugas Pendata (Verifier)"
+  ];
+  
+  newSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  newSheet.getRange(1, 1, 1, headers.length)
+          .setBackground("#0384c7") // Sky-600
+          .setFontColor("#ffffff")
+          .setFontWeight("bold")
+          .setFontFamily("Inter")
+          .setFontSize(10)
+          .setHorizontalAlignment("center");
+          
+  // Tulis Data hasil filter
+  newSheet.getRange(2, 1, filteredValues.length, headers.length).setValues(filteredValues);
+  
+  // Rapikan kolom sheet baru
+  newSheet.getRange(1, 1, filteredValues.length + 1, headers.length).setFontFamily("Inter").setFontSize(9);
+  for (let col = 1; col <= headers.length; col++) {
+    newSheet.autoResizeColumn(col);
+    if (newSheet.getColumnWidth(col) < 120) {
+      newSheet.setColumnWidth(col, 120);
+    }
+  }
+  
+  newSheet.setFrozenRows(1);
+  
+  ui.alert("✅ Sukses!\nBerhasil menyusun " + filteredValues.length + " data ke dalam sheet baru bernama '" + newSheetName + "'!");
 }
 
 // Fungsi Otomatisasi Layout Data
