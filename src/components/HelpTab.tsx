@@ -20,21 +20,64 @@ export default function HelpTab() {
  *    - Klik Deploy, setujui izin akses akun Anda, dan salin URL Webapp yang diberikan!
  */
 
-const SHEET_NAME = "Laporan SLRT KITO";
+const SHEET_RECORDS = "Laporan SLRT KITO";
+const SHEET_FACILITATORS = "Daftar Fasilitator";
 
-// Inisialisasi & Format Google Sheet otomatis
+// Initial facilitators to pre-fill if the sheet is empty
+const INITIAL_FACILITATORS = [
+  {
+    id: "fac-1",
+    name: "Ahmad Fauzi",
+    nik: "1274011202890001",
+    regionKecamatan: "Datuk Bandar",
+    regionKelurahan: "Pahang",
+    phone: "081234567891",
+    email: "ahmad@slrt.id",
+    password: "fauzi123",
+    status: "APPROVED",
+    perangkat: "Sistem Utama",
+    createdAt: "Senin, 01 Juni 2026"
+  },
+  {
+    id: "fac-2",
+    name: "Siti Rahma",
+    nik: "1274011505920003",
+    regionKecamatan: "Teluk Nibung",
+    regionKelurahan: "Sei Merbau",
+    phone: "081234567892",
+    email: "siti@slrt.id",
+    password: "rahma123",
+    status: "APPROVED",
+    perangkat: "Sistem Utama",
+    createdAt: "Selasa, 02 Juni 2026"
+  },
+  {
+    id: "fac-3",
+    name: "Budi Hartono",
+    nik: "1274012408900002",
+    regionKecamatan: "Sei Tualang Raso",
+    regionKelurahan: "Pasar Baru",
+    phone: "081234567893",
+    email: "budi@slrt.id",
+    password: "hartono123",
+    status: "APPROVED",
+    perangkat: "Sistem Utama",
+    createdAt: "Kamis, 04 Juni 2026"
+  }
+];
+
+// Inisialisasi & Format Google Sheet otomatis untuk Laporan & Fasilitator
 function setupSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(SHEET_NAME);
   
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
+  // 1. Setup Laporan Sheet
+  let sheetRec = ss.getSheetByName(SHEET_RECORDS);
+  if (!sheetRec) {
+    sheetRec = ss.insertSheet(SHEET_RECORDS);
   }
+  sheetRec.clear();
   
-  sheet.clear();
-  
-  // Header kolom laporan sesuai format SLRT KITO Tanjungbalai
-  const headers = [
+  const headersRec = [
     "ID Record",
     "Kecamatan",
     "Kelurahan",
@@ -59,38 +102,95 @@ function setupSheet() {
     "Petugas Penginput",
     "Petugas Pendata (Verifier)"
   ];
+  sheetRec.getRange(1, 1, 1, headersRec.length).setValues([headersRec]);
   
-  // Tulis Header ke Baris Pertama
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  const headerRecRange = sheetRec.getRange(1, 1, 1, headersRec.length);
+  headerRecRange.setBackground("#0f766e") // Teal-700
+                .setFontColor("#ffffff")
+                .setFontWeight("bold")
+                .setFontFamily("Inter")
+                .setFontSize(10)
+                .setHorizontalAlignment("center")
+                .setVerticalAlignment("middle");
+  sheetRec.setRowHeight(1, 30);
+  sheetRec.setFrozenRows(1);
+  sheetRec.getRange(1, 1, 1000, headersRec.length).setFontFamily("Inter").setFontSize(9);
   
-  // Format Header (Warna Toska Dinas Sosial Tanjungbalai, text bold, putih, rata tengah)
-  const headerRange = sheet.getRange(1, 1, 1, headers.length);
-  headerRange.setBackground("#0f766e") // Teal-700
-             .setFontColor("#ffffff")
-             .setFontWeight("bold")
-             .setFontFamily("Inter")
-             .setFontSize(10)
-             .setHorizontalAlignment("center")
-             .setVerticalAlignment("middle");
-             
-  sheet.setRowHeight(1, 30);
-  
-  // Bekukan baris pertama agar mempermudah scroll data
-  sheet.setFrozenRows(1);
-  
-  // Atur jenis huruf umum
-  sheet.getRange(1, 1, 500, headers.length).setFontFamily("Inter").setFontSize(9);
-  
-  // Auto-resize kolom berdasarkan konten terkustom
-  for (let i = 1; i <= headers.length; i++) {
-    sheet.autoResizeColumn(i);
-    const width = sheet.getColumnWidth(i);
+  for (let i = 1; i <= headersRec.length; i++) {
+    sheetRec.autoResizeColumn(i);
+    const width = sheetRec.getColumnWidth(i);
     if (width < 130) {
-      sheet.setColumnWidth(i, 130);
+      sheetRec.setColumnWidth(i, 130);
     }
   }
+
+  // 2. Setup Facilitators Sheet
+  setupFacilitatorSheet();
+
+  SpreadsheetApp.getUi().alert("✅ Sukses menginisiasi tabel Laporan & Daftar Petugas SLRT KITO!");
+}
+
+function setupFacilitatorSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheetFac = ss.getSheetByName(SHEET_FACILITATORS);
+  if (!sheetFac) {
+    sheetFac = ss.insertSheet(SHEET_FACILITATORS);
+  }
+  sheetFac.clear();
   
-  SpreadsheetApp.getUi().alert("✅ Sukses menginisiasi tabel Laporan SLRT KITO dengan format Dinas Sosial Tanjungbalai!");
+  const headersFac = [
+    "ID Fasilitator",
+    "Nama Lengkap",
+    "NIK",
+    "Kecamatan Tugas",
+    "Kelurahan Tugas",
+    "No HP",
+    "Email",
+    "Password",
+    "Status Akun",
+    "Perangkat Terakhir",
+    "Tanggal Pendaftaran"
+  ];
+  sheetFac.getRange(1, 1, 1, headersFac.length).setValues([headersFac]);
+  
+  const headerFacRange = sheetFac.getRange(1, 1, 1, headersFac.length);
+  headerFacRange.setBackground("#1e3a8a") // Navy/Blue-900
+                .setFontColor("#ffffff")
+                .setFontWeight("bold")
+                .setFontFamily("Inter")
+                .setFontSize(10)
+                .setHorizontalAlignment("center")
+                .setVerticalAlignment("middle");
+                
+  sheetFac.setRowHeight(1, 30);
+  sheetFac.setFrozenRows(1);
+  sheetFac.getRange(1, 1, 1000, headersFac.length).setFontFamily("Inter").setFontSize(9);
+
+  // Pre-fill default facilitators if completely empty
+  for (let i = 0; i < INITIAL_FACILITATORS.length; i++) {
+    const f = INITIAL_FACILITATORS[i];
+    sheetFac.appendRow([
+      f.id,
+      f.name,
+      "'" + f.nik,
+      f.regionKecamatan,
+      f.regionKelurahan,
+      "'" + f.phone,
+      f.email,
+      f.password,
+      f.status,
+      f.perangkat,
+      f.createdAt
+    ]);
+  }
+
+  for (let i = 1; i <= headersFac.length; i++) {
+    sheetFac.autoResizeColumn(i);
+    const width = sheetFac.getColumnWidth(i);
+    if (width < 120) {
+      sheetFac.setColumnWidth(i, 120);
+    }
+  }
 }
 
 // Membuat Menu Pintasan Kustom di Google Sheets
@@ -99,15 +199,15 @@ function onOpen() {
   ui.createMenu("🟢 Menu SLRT KITO")
     .addItem("Inisialisasi & Format Ulang Tabel", "setupSheet")
     .addSeparator()
-    .addItem("Saring &amp; Ekspor Laporan Terpadu", "filterAndExportIntegrated")
-    .addItem("Rapikan Baris &amp; Format Status", "autofitAndStyleRows")
+    .addItem("Saring & Ekspor Laporan Terpadu", "filterAndExportIntegrated")
+    .addItem("Rapikan Baris & Format Status", "autofitAndStyleRows")
     .addToUi();
 }
 
 // Fungsi Saring & Ekspor Terpadu (Fasilitator AND/OR Pendata)
 function filterAndExportIntegrated() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAME);
+  const sheet = ss.getSheetByName(SHEET_RECORDS);
   if (!sheet) {
     SpreadsheetApp.getUi().alert("❌ Error: Tabel Laporan SLRT KITO tidak ditemukan. Silakan lakukan inisialisasi terlebih dahulu!");
     return;
@@ -115,10 +215,9 @@ function filterAndExportIntegrated() {
   
   const ui = SpreadsheetApp.getUi();
   
-  // Prompt untuk nama Fasilitator Lapangan
   const responseFas = ui.prompt(
     "1/2: Saringan Fasilitator Lapangan",
-    "Masukkan nama Fasilitator Lapangan (Penginput) yang ingin disaring.\nKetik 'Semua' untuk mengabaikan saringan ini:",
+    "Masukkan nama Fasilitator Lapangan (Penginput) yang ingin disaring.\\nKetik 'Semua' untuk mengabaikan saringan ini:",
     ui.ButtonSet.OK_CANCEL
   );
   
@@ -126,10 +225,9 @@ function filterAndExportIntegrated() {
   let targetFas = responseFas.getResponseText().trim();
   if (!targetFas) targetFas = "Semua";
   
-  // Prompt untuk nama Pendata Lapangan
   const responsePen = ui.prompt(
     "2/2: Saringan Petugas Pendata (Verifier)",
-    "Masukkan nama Petugas Pendata (Verifier) yang ingin disaring.\nKetik 'Semua' untuk mengabaikan saringan ini:",
+    "Masukkan nama Petugas Pendata (Verifier) yang ingin disaring.\\nKetik 'Semua' untuk mengabaikan saringan ini:",
     ui.ButtonSet.OK_CANCEL
   );
   
@@ -149,8 +247,8 @@ function filterAndExportIntegrated() {
   
   for (let i = 0; i < values.length; i++) {
     const row = values[i];
-    const fasVal = String(row[21]).trim(); // Kolom V (Petugas Penginput / Fasilitator)
-    const penVal = String(row[22]).trim(); // Kolom W (Petugas Pendata / Verifier)
+    const fasVal = String(row[21]).trim();
+    const penVal = String(row[22]).trim();
     
     let matchFas = true;
     if (targetFas.toLowerCase() !== "semua" && targetFas !== "") {
@@ -168,16 +266,14 @@ function filterAndExportIntegrated() {
   }
   
   if (filteredValues.length === 0) {
-    ui.alert("⚠️ Data tidak ditemukan untuk kombinasi petugas tersebut:\nFasilitator: " + targetFas + "\nPendata: " + targetPen);
+    ui.alert("⚠️ Data tidak ditemukan untuk kombinasi petugas tersebut:\\nFasilitator: " + targetFas + "\\nPendata: " + targetPen);
     return;
   }
   
-  // Buat Sheet Laporan Terpadu Baru
   const timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyyMMdd_HHmmss");
   const newSheetName = "Laporan_Terpadu_" + timestamp;
   const newSheet = ss.insertSheet(newSheetName);
   
-  // Tulis Header
   const headers = [
     "ID Record", "Kecamatan", "Kelurahan", "Hari/Tanggal Input", "Nama Klien",
     "Pekerjaan Kepala RT", "Nama Kuasa (Wakil)", "Alamat Lengkap", "No HP / WhatsApp",
@@ -196,11 +292,9 @@ function filterAndExportIntegrated() {
           .setFontSize(10)
           .setHorizontalAlignment("center");
           
-  // Tulis Data hasil filter
   newSheet.getRange(2, 1, filteredValues.length, headers.length).setValues(filteredValues);
-  
-  // Rapikan kolom sheet baru
   newSheet.getRange(1, 1, filteredValues.length + 1, headers.length).setFontFamily("Inter").setFontSize(9);
+  
   for (let col = 1; col <= headers.length; col++) {
     newSheet.autoResizeColumn(col);
     if (newSheet.getColumnWidth(col) < 120) {
@@ -209,26 +303,23 @@ function filterAndExportIntegrated() {
   }
   
   newSheet.setFrozenRows(1);
-  
-  ui.alert("✅ Sukses!\nBerhasil menyusun " + filteredValues.length + " data ke dalam sheet baru bernama '" + newSheetName + "'!");
+  ui.alert("✅ Sukses!\\nBerhasil menyusun " + filteredValues.length + " data ke dalam sheet baru bernama '" + newSheetName + "'!");
 }
 
-// Fungsi Otomatisasi Layout Data
+// Fungsi Otomatisasi Layout Data Laporan
 function autofitAndStyleRows() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAME);
+  const sheet = ss.getSheetByName(SHEET_RECORDS);
   if (!sheet) return;
   
   const lastRow = sheet.getLastRow();
   const lastCol = sheet.getLastColumn();
   if (lastRow <= 1) return;
   
-  // Terapkan border tipis abu-abu
   const range = sheet.getRange(2, 1, lastRow - 1, lastCol);
   range.setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
   range.setVerticalAlignment("middle");
   
-  // Zebra striping baris genap ganjil serta pewarnaan status verifikasi
   for (let r = 2; r <= lastRow; r++) {
     const rowRange = sheet.getRange(r, 1, 1, lastCol);
     if (r % 2 === 0) {
@@ -238,7 +329,6 @@ function autofitAndStyleRows() {
     }
     sheet.setRowHeight(r, 24);
     
-    // Warnai status kolom 'Status Verifikasi Kunjungan' (kolom ke-19)
     const statusCell = sheet.getRange(r, 19);
     const statusVal = statusCell.getValue();
     if (statusVal === "Sudah Dikunjungi" || statusVal === "Terverifikasi") {
@@ -249,62 +339,256 @@ function autofitAndStyleRows() {
   }
 }
 
-// Webhook POST API untuk menerima data sync instan dari aplikasi SLRT KITO
+// Webhook GET API untuk menerima query data inisiasi awal
+function doGet(e) {
+  const action = e.parameter.action;
+  if (action === "getInitialData") {
+    return ContentService.createTextOutput(JSON.stringify(getInitialData()))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "Aksi tidak dikenal" }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Mengambil seluruh data laporan dan petugas
+function getInitialData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // 1. Data Laporan
+  let sheetRec = ss.getSheetByName(SHEET_RECORDS);
+  const records = [];
+  if (sheetRec) {
+    const lastRow = sheetRec.getLastRow();
+    if (lastRow > 1) {
+      const values = sheetRec.getRange(2, 1, lastRow - 1, 23).getValues();
+      for (let i = 0; i < values.length; i++) {
+        const row = values[i];
+        records.push({
+          id: String(row[0]),
+          kecamatan: String(row[1]),
+          kelurahan: String(row[2]),
+          hariTanggal: String(row[3]),
+          namaKlien: String(row[4]),
+          pekerjaanKrt: String(row[5]),
+          namaKuasa: String(row[6]),
+          alamatKlien: String(row[7]),
+          noTelpon: String(row[8]),
+          dokumen: String(row[9]),
+          status: String(row[10]),
+          bantuanDiterima: String(row[11]),
+          statusRumah: String(row[12]),
+          jenisPenerangan: String(row[13]),
+          mck: String(row[14]),
+          pendapatanPerbulan: String(row[15]),
+          jenisPengaduan: String(row[16]),
+          jenisLayanan: String(row[17]),
+          statusKunjungan: row[18] ? String(row[18]) : "Belum Dikunjungi",
+          tanggalPemeriksaan: String(row[19]) || "-",
+          catatanPemeriksa: String(row[20]) || "-",
+          diinputOleh: row[21] ? String(row[21]) : "Admin",
+          namaPendata: row[22] ? String(row[22]) : ""
+        });
+      }
+    }
+  }
+  
+  // 2. Data Petugas / Fasilitator
+  let sheetFac = ss.getSheetByName(SHEET_FACILITATORS);
+  const facilitators = [];
+  if (sheetFac) {
+    const lastRow = sheetFac.getLastRow();
+    if (lastRow > 1) {
+      const values = sheetFac.getRange(2, 1, lastRow - 1, 11).getValues();
+      for (let i = 0; i < values.length; i++) {
+        const row = values[i];
+        facilitators.push({
+          id: String(row[0]),
+          name: String(row[1]),
+          nik: String(row[2]),
+          regionKecamatan: String(row[3]),
+          regionKelurahan: String(row[4]),
+          phone: String(row[5]),
+          email: String(row[6]),
+          password: String(row[7]),
+          status: String(row[8]) || "PENDING_APPROVAL",
+          perangkat: String(row[9]) || "-",
+          createdAt: String(row[10])
+        });
+      }
+    }
+  }
+  
+  const finalFacs = facilitators.length > 0 ? facilitators : INITIAL_FACILITATORS;
+  return { records: records, facilitators: finalFacs };
+}
+
+// Menangani permintaan pengiriman/edit data (POST) dari aplikasi web
 function doPost(e) {
   try {
     const payload = JSON.parse(e.postData.contents);
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = ss.getSheetByName(SHEET_NAME);
-    if (!sheet) {
-      sheet = ss.insertSheet(SHEET_NAME);
-      setupSheet();
+    const action = payload.action;
+    
+    if (action === "registerFacilitator") {
+      return ContentService.createTextOutput(JSON.stringify(registerFacilitator(payload.data)))
+        .setMimeType(ContentService.MimeType.JSON);
     }
     
-    if (sheet.getLastRow() === 0) {
-      setupSheet();
+    if (action === "updateFacilitatorStatus") {
+      return ContentService.createTextOutput(JSON.stringify(updateFacilitatorStatus(payload.id, payload.status)))
+        .setMimeType(ContentService.MimeType.JSON);
     }
     
-    const rowData = [
-      payload.id || "rec-" + new Date().getTime(),
-      payload.kecamatan || "",
-      payload.kelurahan || "",
-      payload.hariTanggal || new Date().toLocaleDateString("id-ID"),
-      payload.namaKlien || "",
-      payload.pekerjaanKrt || "",
-      payload.namaKuasa || "-",
-      payload.alamatKlien || "",
-      payload.nomorHp || "",
-      payload.kebutuhanBerkas || "",
-      payload.skenarioKebutuhan || "",
-      payload.bantuanDiterima || "",
-      payload.statusRumah || "",
-      payload.jenisPenerangan || "",
-      payload.mck || "",
-      payload.pendapatanPerbulan || "",
-      payload.jenisPengaduan || "",
-      payload.jenisLayanan || "",
-      payload.statusKunjungan || "Belum Dikunjungi",
-      payload.tanggalPemeriksaan || "-",
-      payload.catatanPemeriksa || "-",
-      payload.diinputOleh || "Admin",
-      payload.namaPendata || payload.namaFasilitator || ""
-    ];
+    if (action === "deleteFacilitator") {
+      return ContentService.createTextOutput(JSON.stringify(deleteFacilitator(payload.id)))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     
-    sheet.appendRow(rowData);
-    autofitAndStyleRows();
+    if (action === "syncRecord") {
+      return ContentService.createTextOutput(JSON.stringify(syncRecord(payload.data)))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     
-    return ContentService.createTextOutput(JSON.stringify({ 
-      status: "success", 
-      message: "Data terkirim & tersimpan di Google Sheet!" 
-    })).setMimeType(ContentService.MimeType.JSON);
-    
+    // Sinkronisasi catatan pengaduan tunggal (kompatibilitas versi lama)
+    return ContentService.createTextOutput(JSON.stringify(syncRecord(payload)))
+      .setMimeType(ContentService.MimeType.JSON);
+      
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ 
       status: "error", 
       message: err.toString() 
     })).setMimeType(ContentService.MimeType.JSON);
   }
-}`;
+}
+
+// Registrasi Fasilitator Baru ke Google Sheet
+function registerFacilitator(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_FACILITATORS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_FACILITATORS);
+    setupFacilitatorSheet();
+  }
+  
+  const rowData = [
+    data.id,
+    data.name,
+    "'" + data.nik,
+    data.regionKecamatan,
+    data.regionKelurahan,
+    "'" + data.phone,
+    data.email,
+    data.password,
+    data.status || "PENDING_APPROVAL",
+    data.perangkat || "-",
+    data.createdAt
+  ];
+  sheet.appendRow(rowData);
+  return { status: "success", message: "Petugas berhasil didaftarkan ke sheet!" };
+}
+
+// Mengubah status akun fasilitator (APPROVED / REJECTED)
+function updateFacilitatorStatus(id, status) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_FACILITATORS);
+  if (!sheet) return { status: "error", message: "Sheet petugas tidak ditemukan" };
+  
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return { status: "error", message: "Data petugas kosong" };
+  
+  const range = sheet.getRange(2, 1, lastRow - 1, 1);
+  const values = range.getValues();
+  
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim() === String(id).trim()) {
+      const rowNum = i + 2;
+      sheet.getRange(rowNum, 9).setValue(status); // Kolom 9 (I) is Status Akun
+      return { status: "success", message: "Status petugas " + id + " berhasil diubah ke " + status };
+    }
+  }
+  return { status: "error", message: "Petugas ID " + id + " tidak ditemukan" };
+}
+
+// Menghapus akun petugas
+function deleteFacilitator(id) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_FACILITATORS);
+  if (!sheet) return { status: "error", message: "Sheet petugas tidak ditemukan" };
+  
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return { status: "error", message: "Data petugas kosong" };
+  
+  const range = sheet.getRange(2, 1, lastRow - 1, 1);
+  const values = range.getValues();
+  
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim() === String(id).trim()) {
+      const rowNum = i + 2;
+      sheet.deleteRow(rowNum);
+      return { status: "success", message: "Petugas " + id + " berhasil dihapus dari sheet" };
+    }
+  }
+  return { status: "error", message: "Petugas ID " + id + " tidak ditemukan" };
+}
+
+// Sinkronisasi Catatan Laporan Pengaduan
+function syncRecord(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_RECORDS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_RECORDS);
+    setupSheet();
+  }
+  
+  const lastRow = sheet.getLastRow();
+  let foundRow = -1;
+  
+  if (lastRow > 1) {
+    const range = sheet.getRange(2, 1, lastRow - 1, 1);
+    const values = range.getValues();
+    for (let i = 0; i < values.length; i++) {
+      if (String(values[i][0]).trim() === String(data.id).trim()) {
+        foundRow = i + 2;
+        break;
+      }
+    }
+  }
+  
+  const rowData = [
+    data.id || "rec-" + new Date().getTime(),
+    data.kecamatan || "",
+    data.kelurahan || "",
+    data.hariTanggal || new Date().toLocaleDateString("id-ID"),
+    data.namaKlien || "",
+    data.pekerjaanKrt || "",
+    data.namaKuasa || "-",
+    data.alamatKlien || "",
+    "'" + (data.noTelpon || data.nomorHp || ""),
+    data.dokumen || "",
+    data.status || "",
+    data.bantuanDiterima || "",
+    data.statusRumah || "",
+    data.jenisPenerangan || "",
+    data.mck || "",
+    data.pendapatanPerbulan || "",
+    data.jenisPengaduan || "",
+    data.jenisLayanan || "",
+    data.statusKunjungan || "Belum Dikunjungi",
+    data.tanggalPemeriksaan || "-",
+    data.catatanPemeriksa || "-",
+    data.diinputOleh || "Admin",
+    data.namaPendata || data.namaFasilitator || ""
+  ];
+  
+  if (foundRow !== -1) {
+    sheet.getRange(foundRow, 1, 1, rowData.length).setValues([rowData]);
+  } else {
+    sheet.appendRow(rowData);
+  }
+  
+  autofitAndStyleRows();
+  return { status: "success", message: "Laporan berhasil disinkronisasi!" };
+}
+`;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(appScriptCode);

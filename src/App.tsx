@@ -195,7 +195,7 @@ export default function App() {
     return fList;
   });
 
-  const GOOGLE_SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbwUWtSHMJst3h8RpH7mWaRgcH6g0PmffIrxKLnlO0eRQBYLaz19ht7AHmX6o2kQpfge7A/exec";
+  const GOOGLE_SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbzc8KJD9x28VETuAGz3y7-u6R-BEQ2aJTeRtonHUAP1CG_-7v1TBOtoR73yTB1XcjhyvQ/exec";
 
   // Reconcile list of facilitators with administrative status overrides
   const getReconciledFacilitators = (rawFacs: FacilitatorUser[]): FacilitatorUser[] => {
@@ -4306,10 +4306,38 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   >
                     🔄 {cloudLoading ? 'Menyinkronkan...' : 'Sinkron Akun Baru'}
                   </button>
-                  <div className="bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-2xl text-[11px] text-slate-650 flex items-center gap-2 font-semibold">
+                  <div className="bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-2xl text-[11px] text-slate-650 flex items-center gap-2 font-semibold font-sans">
                     <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse"></span>
                     <span>Menunggu Verifikasi: <b>{facilitators.filter(f => f.status === 'PENDING_APPROVAL').length} Orang</b></span>
                   </div>
+                </div>
+              </div>
+
+              {/* Alert Box untuk Solusi Bug Google Apps Script */}
+              <div className="bg-amber-50 border border-amber-300 p-4.5 rounded-2xl flex gap-3 text-xs text-amber-900 leading-relaxed shadow-xs font-sans">
+                <span className="text-base mt-0.5">⚠️</span>
+                <div>
+                  <p className="font-extrabold text-amber-950 uppercase tracking-wide flex items-center gap-1.5 flex-wrap">
+                    <span>SOLUSI STATUS AKUN KEMBALI MENUNGGU TINJAUAN (BUG GOOGLE APPS SCRIPT)</span>
+                    <span className="bg-rose-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase">PENTING!</span>
+                  </p>
+                  <p className="mt-1">
+                    Saat kami memeriksa koneksi, kami mendeteksi sistem Google Sheets Anda mengalami error internal saat memperbarui status (penerimaan/penolakan petugas). Versi lama script Google Sheets Anda memiliki baris kode <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold text-rose-700">sheet.getCell(...)</code> yang menyebabkan error <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold text-rose-700">"TypeError: sheet.getCell is not a function"</code> di server. Akibatnya, persetujuan admin gagal disimpan secara permanen di database online.
+                  </p>
+                  <p className="mt-2 font-bold text-amber-950">
+                    Cara memperbaiki masalah ini secara tuntas:
+                  </p>
+                  <ol className="list-decimal list-inside space-y-1 mt-1 pl-1 font-semibold text-slate-800">
+                    <li>Klik tab menu <span className="underline cursor-pointer font-black text-indigo-700 hover:text-indigo-900" onClick={() => setActiveTab('help')}>📖 Panduan 18 Lapangan / Google Apps Script</span>.</li>
+                    <li>Masuk ke tab <b>Google Apps Script</b> di kanan atas halaman tersebut dan klik tombol <b>Salin Kode</b>.</li>
+                    <li>Buka Spreadsheet Google Sheets Anda &gt; klik menu <b>Ekstensi</b> &gt; <b>Apps Script</b>.</li>
+                    <li>Hapus seluruh kode lama yang ada di sana, tempelkan kode baru yang barusan Anda salin, lalu klik <b>Simpan</b> (ikon disket).</li>
+                    <li>Klik <b>Terapkan (Deploy)</b> di kanan atas &gt; pilih <b>Penerapan Baru (New Deployment)</b> &gt; pastikan Akses diset ke <b>"Siapa Saja / Anyone"</b>, lalu klik <b>Deploy</b>.</li>
+                    <li>Salin URL Web App yang baru dihasilkan dan ganti URL di kode aplikasi Anda jika berubah.</li>
+                  </ol>
+                  <p className="mt-2 text-[10px] text-amber-800 font-medium font-sans">
+                    💡 <i>*Catatan: Segera setelah kode Apps Script baru dipasang di Google Sheets, semua perubahan status dari Admin akan tersimpan selamanya secara instan tanpa kembali menunggu tinjauan.*</i>
+                  </p>
                 </div>
               </div>
 
