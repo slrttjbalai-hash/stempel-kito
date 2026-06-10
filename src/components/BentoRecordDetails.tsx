@@ -1,5 +1,5 @@
 import React from 'react';
-import { SLRTRecord } from '../types';
+import { SLRTRecord, getSafeBase64Url } from '../types';
 import { Printer, Calendar, FileText, Clipboard, Check, HelpCircle, ShieldCheck, HeartPulse, Camera, Clock, CheckCircle2, UserCheck, Download, Home } from 'lucide-react';
 
 interface BentoRecordDetailsProps {
@@ -60,6 +60,10 @@ export default function BentoRecordDetails({
   };
 
   const statusStyle = getStatusStyle(rec.status);
+
+  // Dynamically calculate verify photo count and reactive status checklist
+  const countPhotos = [rec.fotoKkKtp, rec.fotoDepanRumah, rec.dokumentasiBukti].filter(Boolean).length;
+  const photoStatusText = countPhotos > 0 ? `Tersedia (${countPhotos} Foto)` : 'Belum Ada Foto';
 
   // Split documents string into badges
   const docList = rec.dokumen
@@ -123,15 +127,15 @@ export default function BentoRecordDetails({
       <div id="bento-visit-verification" className="col-span-1 md:col-span-3 bg-white p-6 rounded-2xl border border-slate-205/90 shadow-sm relative overflow-hidden flex flex-col md:flex-row gap-6 items-stretch">
         <div className="flex-1 flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <div className="flex items-center gap-2">
-                <span className="p-1 text-xs font-semibold rounded bg-slate-100 text-slate-700">Aktor &amp; Alur</span>
-                <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">
-                  Status Verifikasi &amp; Bukti Kunjungan
+            <div className="flex flex-col gap-2 pb-3 border-b border-slate-100 mb-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black text-rose-600 uppercase tracking-widest">VII. DOCUMENTASI HASIL VERIFIKASI</span>
+                <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight font-display mt-0.5">
+                  DOKUMENTASI DARI PENDATA
                 </h4>
               </div>
               
-              <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg uppercase tracking-wider inline-flex items-center gap-1.5 ${
+              <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg uppercase tracking-wider inline-flex items-center gap-1.5 self-start sm:self-center ${
                 rec.statusKunjungan === 'Sudah Dikunjungi' 
                   ? 'bg-emerald-100 text-emerald-800 border border-emerald-200/50' 
                   : 'bg-amber-100 text-amber-800 border border-amber-200/50'
@@ -149,6 +153,30 @@ export default function BentoRecordDetails({
                 )}
               </span>
             </div>
+
+            {/* Reactive Status Checklist panel */}
+            <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-3.5 mb-4 flex flex-col gap-2 text-xs">
+              <span className="text-[9px] font-black text-slate-450 uppercase tracking-widest block">CHECKLIST VERIFIKASI INSTAN</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-700 font-medium">
+                <div className="flex items-center gap-2">
+                  <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                    rec.statusKunjungan === 'Sudah Dikunjungi' ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'
+                  }`}>
+                    {rec.statusKunjungan === 'Sudah Dikunjungi' ? '✓' : '•'}
+                  </div>
+                  <span>Status Kunjungan: <b className={rec.statusKunjungan === 'Sudah Dikunjungi' ? "text-emerald-700" : "text-amber-700 font-bold"}>{rec.statusKunjungan || 'Belum Dikunjungi'}</b></span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                    countPhotos >= 2 ? 'bg-emerald-500 text-white' : countPhotos > 0 ? 'bg-indigo-500 text-white' : 'bg-slate-200 text-slate-500'
+                  }`}>
+                    {countPhotos > 0 ? '✓' : '•'}
+                  </div>
+                  <span>Dokumentasi Hasil Verifikasi: <b className="text-indigo-700 underline font-extrabold">{photoStatusText}</b></span>
+                </div>
+              </div>
+            </div>
+
             <div className="space-y-4">
                {rec.statusKunjungan === 'Sudah Dikunjungi' ? (
                  <div>
@@ -223,10 +251,10 @@ export default function BentoRecordDetails({
            {/* 1. Foto KK / KTP */}
            <div className="space-y-1">
              <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight block">1. Bukti Gambar KK / KTP</span>
-             {rec.statusKunjungan === 'Sudah Dikunjungi' && rec.fotoKkKtp ? (
+             {rec.fotoKkKtp ? (
                <div className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in">
                  <img 
-                   src={rec.fotoKkKtp} 
+                   src={getSafeBase64Url(rec.fotoKkKtp)} 
                    alt="Foto KK / KTP" 
                    referrerPolicy="no-referrer"
                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-350"
@@ -246,10 +274,10 @@ export default function BentoRecordDetails({
            {/* 2. Foto Depan Rumah */}
            <div className="space-y-1">
              <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight block">2. Foto Depan Rumah</span>
-             {rec.statusKunjungan === 'Sudah Dikunjungi' && rec.fotoDepanRumah ? (
+             {rec.fotoDepanRumah ? (
                <div className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in">
                  <img 
-                   src={rec.fotoDepanRumah} 
+                   src={getSafeBase64Url(rec.fotoDepanRumah)} 
                    alt="Foto Depan Rumah" 
                    referrerPolicy="no-referrer"
                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-350"
@@ -269,10 +297,10 @@ export default function BentoRecordDetails({
            {/* 3. Foto Ops Kunjungan */}
            <div className="space-y-1">
              <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight block">3. Foto Kontrol Kunjungan</span>
-             {rec.statusKunjungan === 'Sudah Dikunjungi' && rec.dokumentasiBukti ? (
+             {rec.dokumentasiBukti ? (
                <div className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in">
                  <img 
-                   src={rec.dokumentasiBukti} 
+                   src={getSafeBase64Url(rec.dokumentasiBukti)} 
                    alt="Foto Kontrol Lapangan" 
                    referrerPolicy="no-referrer"
                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-350"

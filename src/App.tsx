@@ -35,7 +35,7 @@ import {
   UserCheck
 } from 'lucide-react';
 
-import { SLRTRecord, TANJUNGBALAI_LOCATIONS, INITIAL_RECORDS, FacilitatorUser, INITIAL_FACILITATORS } from './types';
+import { SLRTRecord, TANJUNGBALAI_LOCATIONS, INITIAL_RECORDS, FacilitatorUser, INITIAL_FACILITATORS, getSafeBase64Url } from './types';
 import { jsPDF } from 'jspdf';
 import BentoRecordDetails from './components/BentoRecordDetails';
 import SmartParserTab from './components/SmartParserTab';
@@ -1256,7 +1256,11 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           dokumentasiBukti: verifierPhoto,
           namaPendata: verifierNamaPendata.trim() || rec.namaFasilitator || session?.name || 'Petugas SLRT',
           fotoKkKtp: verifierFotoKkKtp,
-          fotoDepanRumah: verifierFotoDepanRumah
+          fotoDepanRumah: verifierFotoDepanRumah,
+          // Field Application Compatibility
+          foto_hunian_url: verifierFotoDepanRumah,
+          foto_ktp_url: verifierFotoKkKtp,
+          catatan_pendata: verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.'
         };
         compiledRecordForSync = updated;
         return updated;
@@ -2151,8 +2155,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           <div class="doc-grid">
             <div class="doc-card">
               <div class="doc-img-container">
-                ${selectedRecord.statusKunjungan === 'Sudah Dikunjungi' && (selectedRecord.fotoDepanRumah || selectedRecord.dokumentasiBukti) ? `
-                  <img class="doc-img" src="${selectedRecord.fotoDepanRumah || selectedRecord.dokumentasiBukti}" />
+                ${(selectedRecord.fotoDepanRumah || selectedRecord.dokumentasiBukti) ? `
+                  <img class="doc-img" src="${getSafeBase64Url(selectedRecord.fotoDepanRumah || selectedRecord.dokumentasiBukti)}" />
                 ` : `
                   <div class="doc-placeholder">
                     <span class="doc-placeholder-icon">🏠</span>
@@ -2167,8 +2171,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
             <div class="doc-card">
               <div class="doc-img-container">
-                ${selectedRecord.statusKunjungan === 'Sudah Dikunjungi' && selectedRecord.fotoKkKtp ? `
-                  <img class="doc-img" src="${selectedRecord.fotoKkKtp}" />
+                ${selectedRecord.fotoKkKtp ? `
+                  <img class="doc-img" src="${getSafeBase64Url(selectedRecord.fotoKkKtp)}" />
                 ` : `
                   <div class="doc-placeholder">
                     <span class="doc-placeholder-icon">📄</span>
@@ -2245,25 +2249,26 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     // Helper to load any internal base64 or external url with timeout and auto-conversion to standard JPEG
     const loadAnyImageBase64 = (srcUrl: string): Promise<string> => {
       return new Promise((resolve) => {
-        if (!srcUrl) {
+        const normalizedUrl = getSafeBase64Url(srcUrl);
+        if (!normalizedUrl) {
           resolve('');
           return;
         }
         
-        // If it is already a Jpeg data url, we resolve immediately for extreme performance
-        if (srcUrl.startsWith('data:image/jpeg')) {
-          resolve(srcUrl);
+        // If it is already a base64 data url, we resolve immediately for extreme performance and 100% reliability
+        if (normalizedUrl.startsWith('data:')) {
+          resolve(normalizedUrl);
           return;
         }
 
         // For non-JPEG base64 and external URLs, we load them into canvas to convert to JPEG format
         const img = new Image();
-        if (!srcUrl.startsWith('data:')) {
+        if (!normalizedUrl.startsWith('data:')) {
           img.crossOrigin = 'Anonymous';
         }
         
         const timeoutId = setTimeout(() => {
-          resolve(srcUrl.startsWith('data:') ? srcUrl : '');
+          resolve(normalizedUrl.startsWith('data:') ? normalizedUrl : '');
         }, 2500);
 
         img.onload = () => {
@@ -2277,19 +2282,19 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               ctx.drawImage(img, 0, 0);
               resolve(canvas.toDataURL('image/jpeg', 0.85));
             } else {
-              resolve(srcUrl.startsWith('data:') ? srcUrl : '');
+              resolve(normalizedUrl.startsWith('data:') ? normalizedUrl : '');
             }
           } catch (e) {
-            resolve(srcUrl.startsWith('data:') ? srcUrl : '');
+            resolve(normalizedUrl.startsWith('data:') ? normalizedUrl : '');
           }
         };
 
         img.onerror = () => {
           clearTimeout(timeoutId);
-          resolve(srcUrl.startsWith('data:') ? srcUrl : '');
+          resolve(normalizedUrl.startsWith('data:') ? normalizedUrl : '');
         };
 
-        img.src = srcUrl;
+        img.src = normalizedUrl;
       });
     };
 
@@ -2510,9 +2515,19 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     const img1Base64 = await loadAnyImageBase64(rec.fotoDepanRumah || rec.dokumentasiBukti || '');
     const img2Base64 = await loadAnyImageBase64(rec.fotoKkKtp || '');
 
+    // Function to parse dynamic image format from mime types with robust fallback
+    const detectFormat = (base64Str: string): string => {
+      const lower = base64Str.toLowerCase();
+      if (lower.includes('data:image/png') || lower.includes('png')) return 'PNG';
+      if (lower.includes('data:image/webp') || lower.includes('webp')) return 'WEBP';
+      if (lower.includes('data:image/gif') || lower.includes('gif')) return 'GIF';
+      return 'JPEG';
+    };
+
     if (img1Base64) {
       try {
-        doc.addImage(img1Base64, 'JPEG', 16.5, boxY + 0.5, boxWidth - 1, boxHeight - 1);
+        const fmt1 = detectFormat(img1Base64);
+        doc.addImage(img1Base64, fmt1, 16.5, boxY + 0.5, boxWidth - 1, boxHeight - 1);
       } catch (err) {
         drawPhotoPlaceholder(16, boxY, boxWidth, boxHeight, 'FOTO KONDISI RUMAH KLIEN');
       }
@@ -2522,7 +2537,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
     if (img2Base64) {
       try {
-        doc.addImage(img2Base64, 'JPEG', 114.5, boxY + 0.5, boxWidth - 1, boxHeight - 1);
+        const fmt2 = detectFormat(img2Base64);
+        doc.addImage(img2Base64, fmt2, 114.5, boxY + 0.5, boxWidth - 1, boxHeight - 1);
       } catch (err) {
         drawPhotoPlaceholder(114, boxY, boxWidth, boxHeight, 'FOTO KK / KTP KLIEN');
       }

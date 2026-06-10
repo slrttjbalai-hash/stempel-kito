@@ -28,6 +28,11 @@ export interface SLRTRecord {
   namaPendata?: string; // Nama petugas pendata lapangan
   fotoKkKtp?: string; // Foto KK / KTP
   fotoDepanRumah?: string; // Foto Depan Rumah
+  
+  // Field Application Database Compatibility Fields
+  foto_hunian_url?: string;
+  foto_ktp_url?: string;
+  catatan_pendata?: string;
 }
 
 export const TANJUNGBALAI_LOCATIONS: { [kecamatan: string]: string[] } = {
@@ -202,4 +207,24 @@ export const INITIAL_FACILITATORS: FacilitatorUser[] = [
     createdAt: 'Kamis, 04 Juni 2026'
   }
 ];
+
+export const getSafeBase64Url = (srcUrl: string | undefined): string => {
+  if (!srcUrl) return '';
+  const trimmed = srcUrl.trim();
+  if (!trimmed) return '';
+  if (
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('/') ||
+    trimmed.startsWith('.')
+  ) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('iVBORw0KGgo')) {
+    return `data:image/png;base64,${trimmed}`;
+  }
+  return `data:image/jpeg;base64,${trimmed}`;
+};
+
 

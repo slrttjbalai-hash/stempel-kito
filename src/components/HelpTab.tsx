@@ -547,20 +547,27 @@ function syncRecord(data) {
   
   const lastRow = sheet.getLastRow();
   let foundRow = -1;
+  const targetId = data.id || data.clientId || data.client_id;
   
   if (lastRow > 1) {
     const range = sheet.getRange(2, 1, lastRow - 1, 1);
     const values = range.getValues();
     for (let i = 0; i < values.length; i++) {
-      if (String(values[i][0]).trim() === String(data.id).trim()) {
+      if (String(values[i][0]).trim() === String(targetId).trim()) {
         foundRow = i + 2;
         break;
       }
     }
   }
+
+  // Dukungan Kompatibilitas Multi-Sistem (Field App & Web Admin Dinsos):
+  // Menangani data verifikasi lapangan baik dari kolom format camelCase ataupun format snake_case
+  const fotoKk = data.fotoKkKtp || data.foto_ktp_url || "";
+  const fotoHunian = data.fotoDepanRumah || data.foto_hunian_url || "";
+  const catatan = data.catatanPemeriksa || data.catatan_pendata || "-";
   
   const rowData = [
-    data.id || "rec-" + new Date().getTime(),
+    targetId || "rec-" + new Date().getTime(),
     data.kecamatan || "",
     data.kelurahan || "",
     data.hariTanggal || new Date().toLocaleDateString("id-ID"),
@@ -580,11 +587,11 @@ function syncRecord(data) {
     data.jenisLayanan || "",
     data.statusKunjungan || "Belum Dikunjungi",
     data.tanggalPemeriksaan || "-",
-    data.catatanPemeriksa || "-",
+    catatan,
     data.diinputOleh || "Admin",
     data.namaPendata || data.namaFasilitator || "",
-    data.fotoKkKtp || "",
-    data.fotoDepanRumah || "",
+    fotoKk,
+    fotoHunian,
     data.dokumentasiBukti || ""
   ];
   
