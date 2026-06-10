@@ -332,6 +332,14 @@ export default function App() {
   const [selectedPendataFilter, setSelectedPendataFilter] = useState<string>('all');
   const [visiblePasswords, setVisiblePasswords] = useState<{[key: string]: boolean}>({});
 
+  // Real Camera States for Real-time capture & Geotagting
+  const [cameraModalOpen, setCameraModalOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [onPhotoCapture, setOnPhotoCapture] = useState<((photoDataUrl: string) => void) | null>(null);
+  const [cameraTargetName, setCameraTargetName] = useState<string>('');
+
   // Warga Portal Specific Input form / search
   const [wargaSearchQuery, setWargaSearchQuery] = useState('');
   const [wargaAddNama, setWargaAddNama] = useState('');
@@ -1031,6 +1039,69 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         resolve(defaultData);
       }
     });
+  };
+
+  // Camera action handlers
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const startLiveCamera = async (mode: 'user' | 'environment') => {
+    setCameraError(null);
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { 
+          facingMode: mode, 
+          width: { ideal: 1280 }, 
+          height: { ideal: 720 } 
+        }
+      });
+      setCameraStream(stream);
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 100);
+    } catch (err: any) {
+      console.error("Error opening camera stream:", err);
+      setCameraError("Gagal mengakses kamera internal. Hubungi admin atau gunakan opsi 'Upload & Kompres'.");
+    }
+  };
+
+  const stopLiveCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+  };
+
+  const switchFacingMode = () => {
+    const nextMode = cameraFacingMode === 'user' ? 'environment' : 'user';
+    setCameraFacingMode(nextMode);
+    startLiveCamera(nextMode);
+  };
+
+  const captureLivePhoto = () => {
+    if (videoRef.current && onPhotoCapture) {
+      const video = videoRef.current;
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        
+        // Stop stream and close modal
+        stopLiveCamera();
+        setCameraModalOpen(false);
+        
+        // Add Geotag to captured image and compress
+        processGeotagAndCompression(dataUrl, true, onPhotoCapture);
+      }
+    }
   };
 
   // Main canvas-level processor for geotagging drawing and iterative JPG quality compression
@@ -4569,21 +4640,19 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
-                    {/* Live Camera Simulation Option */}
+                    {/* Live Camera Option */}
                     <button
                       type="button"
                       onClick={() => {
-                        const documentSamples = [
-                          'https://images.unsplash.com/photo-1554774853-aae0a22c8aa4?auto=format&fit=crop&q=80&w=400',
-                          'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&q=80&w=400'
-                        ];
-                        const picked = documentSamples[Math.floor(Math.random() * documentSamples.length)];
-                        processGeotagAndCompression(picked, true, setVerifierFotoKkKtp);
+                        setCameraTargetName('Foto Kartu Keluarga / KTP');
+                        setOnPhotoCapture(() => setVerifierFotoKkKtp);
+                        setCameraModalOpen(true);
+                        startLiveCamera(cameraFacingMode);
                       }}
                       className="h-14 border border-dashed border-emerald-300 rounded-xl flex flex-col items-center justify-center bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer text-emerald-800 text-[10px] font-medium animate-pulse"
                     >
                       <Camera className="w-4 h-4 mb-0.5 text-emerald-600" />
-                      <span className="font-bold">Ambil &amp; Geotag</span>
+                      <span className="font-bold">Ambil &amp; Geotag (Live)</span>
                     </button>
 
                     {/* File Upload Option */}
@@ -4631,21 +4700,19 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
-                    {/* Live Camera Simulation Option */}
+                    {/* Live Camera Option */}
                     <button
                       type="button"
                       onClick={() => {
-                        const houseSamples = [
-                          'https://images.unsplash.com/photo-1516880711640-ef7db81be3e1?auto=format&fit=crop&q=80&w=400',
-                          'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=400'
-                        ];
-                        const picked = houseSamples[Math.floor(Math.random() * houseSamples.length)];
-                        processGeotagAndCompression(picked, true, setVerifierFotoDepanRumah);
+                        setCameraTargetName('Foto Depan Rumah Utama');
+                        setOnPhotoCapture(() => setVerifierFotoDepanRumah);
+                        setCameraModalOpen(true);
+                        startLiveCamera(cameraFacingMode);
                       }}
                       className="h-14 border border-dashed border-emerald-300 rounded-xl flex flex-col items-center justify-center bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer text-emerald-800 text-[10px] font-medium animate-pulse"
                     >
                       <Camera className="w-4 h-4 mb-0.5 text-emerald-600" />
-                      <span className="font-bold">Ambil &amp; Geotag</span>
+                      <span className="font-bold">Ambil &amp; Geotag (Live)</span>
                     </button>
 
                     {/* File Upload Option */}
@@ -4746,6 +4813,113 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 📷 MODAL KAMERA GEOTAGGING REAL-TIME */}
+      {cameraModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-[100] font-sans">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl max-w-md w-full p-6 flex flex-col gap-5 text-white animate-scaleIn">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="p-1 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase">LIVE INSTANT CAM</span>
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-300">{cameraTargetName || 'Ambil Dokumentasi'}</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  stopLiveCamera();
+                  setCameraModalOpen(false);
+                }}
+                className="text-slate-400 hover:text-white font-extrabold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Video preview container */}
+            <div className="relative aspect-video rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center">
+              {cameraError ? (
+                <div className="p-4 text-center space-y-3">
+                  <p className="text-xs text-rose-400 font-semibold">{cameraError}</p>
+                  <p className="text-[10px] text-slate-400">
+                    Sistem akan mengizinkan Anda mengambil foto dari rol kamera atau berkas lokal perangkat.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                  {/* Camera overlays for visual alignment */}
+                  <div className="absolute inset-4 border border-white/20 pointer-events-none rounded-xl"></div>
+                  <div className="absolute top-1/2 left-4 right-4 h-[1px] bg-white/10 pointer-events-none"></div>
+                  <div className="absolute left-1/2 top-4 bottom-4 w-[1px] bg-white/10 pointer-events-none"></div>
+                  <span className="absolute top-2 right-2 bg-emerald-600 text-white text-[8px] font-bold py-0.5 px-1.5 rounded animate-pulse">
+                    LIVE STREAMING
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Controls */}
+            <div className="flex flex-col gap-3">
+              {!cameraError && (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={switchFacingMode}
+                    className="py-2 px-3 bg-slate-800 hover:bg-slate-750 text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    🔄 Ganti Kamera ({cameraFacingMode === 'user' ? 'Depan' : 'Belakang'})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={captureLivePhoto}
+                    className="py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 uppercase tracking-wide shadow-md"
+                  >
+                    📸 Ambil Foto
+                  </button>
+                </div>
+              )}
+
+              {/* Native camera capture or upload fallback */}
+              <div className="pt-2 border-t border-slate-850 flex flex-col items-center gap-2">
+                <p className="text-[10px] text-slate-400 text-center leading-normal">
+                  Jika kamera video tidak terbuka (masalah browser/iframe), gunakan kamera bawaan HP (Native) di bawah:
+                </p>
+                <label className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black text-center transition-colors cursor-pointer flex items-center justify-center gap-1.5">
+                  📱 Buka Kamera Bawaan HP / Gambar
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file && onPhotoCapture) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          if (typeof reader.result === 'string') {
+                            const rawResult = reader.result;
+                            stopLiveCamera();
+                            setCameraModalOpen(false);
+                            // Process Geotag and compress
+                            processGeotagAndCompression(rawResult, true, onPhotoCapture);
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
           </div>
         </div>
       )}

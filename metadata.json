@@ -1,6 +1,9 @@
 {
   "name": "Pelayanan dan Pengaduan SLRT Kito",
   "description": "Sistem informasi administrasi pelayanan dan pengaduan SLRT Kito untuk mendata kunjungan masyarakat secara terstruktur.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
