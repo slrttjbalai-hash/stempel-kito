@@ -232,9 +232,16 @@ export default function App() {
     }
   };
 
-  // Synchronize on startup
+  // Synchronize on startup and pull changes periodically
   useEffect(() => {
     refreshFromCloud(false);
+
+    // Auto-update every 12 seconds to ensure registrations and records are in near-real-time sync across devices
+    const syncInterval = setInterval(() => {
+      refreshFromCloud(false);
+    }, 12000);
+
+    return () => clearInterval(syncInterval);
   }, []);
 
   // Form input states for Authentication Gate
@@ -573,8 +580,12 @@ export default function App() {
     setCloudLoading(true);
     try {
       // Post registration down to Google Sheets database including current parsed device details
-      const response = await fetch(GOOGLE_SHEETS_API_URL, {
+      await fetch(GOOGLE_SHEETS_API_URL, {
         method: "POST",
+        mode: "no-cors",
+        headers: {
+          "Content-Type": "text/plain"
+        },
         body: JSON.stringify({
           action: 'registerFacilitator',
           data: {
@@ -584,12 +595,9 @@ export default function App() {
         })
       });
 
-      if (response.ok) {
-        setFacilitators(prev => [...prev, newFacilitator]);
-        setRegSuccess(`Registrasi sukses untuk "${regName}"! Akun Anda kini tercatat online di Google Sheets dengan status PENDING_APPROVAL. Silakan hubungi Administrator Dinsos untuk aktivasi.`);
-      } else {
-        throw new Error("Cloud Sheets error code response.");
-      }
+      // Under mode: "no-cors", the fetch resolves successfully once the request has been dispatched.
+      setFacilitators(prev => [...prev, newFacilitator]);
+      setRegSuccess(`Registrasi sukses untuk "${regName}"! Akun Anda kini tercatat online di Google Sheets dengan status PENDING_APPROVAL. Silakan hubungi Administrator Dinsos untuk aktivasi.`);
     } catch (err) {
       console.error("Cloud registration failed:", err);
       // Fallback local registration
@@ -611,6 +619,7 @@ export default function App() {
 
   // 4. Admin Action: Approve/Reject Facilitator Status with Google Sheets update
   const handleUpdateFacilitatorStatus = async (id: string, newStatus: 'APPROVED' | 'REJECTED') => {
+    const matched = facilitators.find(f => f.id === id);
     setFacilitators(prev => prev.map(f => {
       if (f.id === id) {
         return { ...f, status: newStatus };
@@ -618,10 +627,14 @@ export default function App() {
       return f;
     }));
     
-    // Sync status change directly to Google Sheets database
+    // Sync status change directly to Google Sheets database (bypassing CORS)
     try {
       await fetch(GOOGLE_SHEETS_API_URL, {
         method: "POST",
+        mode: "no-cors",
+        headers: {
+          "Content-Type": "text/plain"
+        },
         body: JSON.stringify({
           action: 'updateFacilitatorStatus',
           id: id,
@@ -632,7 +645,6 @@ export default function App() {
       console.error("Gagal sinkron status fasilitas ke cloud:", err);
     }
 
-    const matched = facilitators.find(f => f.id === id);
     const label = newStatus === 'APPROVED' ? 'DISETUJUI (Aktif)' : 'DITOLAK (Nonaktif)';
     alert(`Fasilitator "${matched?.name || ''}" berhasil diubah status menjadi: ${label}`);
   };
@@ -642,10 +654,14 @@ export default function App() {
     if (window.confirm("Apakah Anda yakin ingin menghapus akun Fasilitator ini dari sistem?")) {
       setFacilitators(prev => prev.filter(f => f.id !== id));
       
-      // Delete facilitator from Google Sheets database
+      // Delete facilitator from Google Sheets database (bypassing CORS)
       try {
         await fetch(GOOGLE_SHEETS_API_URL, {
           method: "POST",
+          mode: "no-cors",
+          headers: {
+            "Content-Type": "text/plain"
+          },
           body: JSON.stringify({
             action: 'deleteFacilitator',
             id: id
@@ -1487,6 +1503,10 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     try {
       await fetch(GOOGLE_SHEETS_API_URL, {
         method: "POST",
+        mode: "no-cors",
+        headers: {
+          "Content-Type": "text/plain"
+        },
         body: JSON.stringify({
           action: 'syncRecord',
           data: rec
@@ -1528,6 +1548,10 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       try {
         await fetch(GOOGLE_SHEETS_API_URL, {
           method: "POST",
+          mode: "no-cors",
+          headers: {
+            "Content-Type": "text/plain"
+          },
           body: JSON.stringify({
             action: 'syncRecord',
             data: rec
@@ -4210,9 +4234,23 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     Sesuai prosedur keamanan GovTech, semua pendaftar petugas survei dikunci sampai Administrator memberikan status Aktif (Approved).
                   </p>
                 </div>
-                <div className="bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-2xl text-[11px] text-slate-650 flex items-center gap-2 font-semibold">
-                  <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse"></span>
-                  <span>Menunggu Verifikasi: <b>{facilitators.filter(f => f.status === 'PENDING_APPROVAL').length} Orang</b></span>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => refreshFromCloud(true)}
+                    disabled={cloudLoading}
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                      cloudLoading
+                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed scale-98'
+                        : 'bg-indigo-600 hover:bg-indigo-700 border-indigo-650 text-white hover:shadow-xs active:scale-97'
+                    }`}
+                  >
+                    🔄 {cloudLoading ? 'Menyinkronkan...' : 'Sinkron Akun Baru'}
+                  </button>
+                  <div className="bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-2xl text-[11px] text-slate-650 flex items-center gap-2 font-semibold">
+                    <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse"></span>
+                    <span>Menunggu Verifikasi: <b>{facilitators.filter(f => f.status === 'PENDING_APPROVAL').length} Orang</b></span>
+                  </div>
                 </div>
               </div>
 
