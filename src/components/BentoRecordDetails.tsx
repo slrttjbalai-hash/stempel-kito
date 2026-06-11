@@ -61,8 +61,13 @@ export default function BentoRecordDetails({
 
   const statusStyle = getStatusStyle(rec.status);
 
+  const fotoKk = rec.fotoKkKtp || rec.foto_ktp_url || '';
+  const fotoRumah = rec.fotoDepanRumah || rec.foto_hunian_url || '';
+  const fotoOps = rec.dokumentasiBukti || '';
+  const catatan = rec.catatanPemeriksa || rec.catatan_pendata || '';
+
   // Dynamically calculate verify photo count and reactive status checklist
-  const countPhotos = [rec.fotoKkKtp, rec.fotoDepanRumah, rec.dokumentasiBukti].filter(Boolean).length;
+  const countPhotos = [fotoKk, fotoRumah, fotoOps].filter(Boolean).length;
   const photoStatusText = countPhotos > 0 ? `Tersedia (${countPhotos} Foto)` : 'Belum Ada Foto';
 
   // Split documents string into badges

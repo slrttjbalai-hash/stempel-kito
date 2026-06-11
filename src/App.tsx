@@ -150,7 +150,20 @@ export default function App() {
   // State for database records
   const [records, setRecords] = useState<SLRTRecord[]>(() => {
     const saved = localStorage.getItem('slrt_records');
-    return saved ? JSON.parse(saved) : INITIAL_RECORDS;
+    let loaded: SLRTRecord[] = saved ? JSON.parse(saved) : INITIAL_RECORDS;
+
+    const deletedIdsString = localStorage.getItem('slrt_deleted_record_ids') || '[]';
+    try {
+      const deletedIds = JSON.parse(deletedIdsString);
+      if (Array.isArray(deletedIds) && deletedIds.length > 0) {
+        loaded = loaded.filter(rec => !deletedIds.includes(rec.id) && !rec.isDeleted && (rec as any).isDeleted !== 'true');
+      } else {
+        loaded = loaded.filter(rec => !rec.isDeleted && (rec as any).isDeleted !== 'true');
+      }
+    } catch (e) {
+      loaded = loaded.filter(rec => !rec.isDeleted && (rec as any).isDeleted !== 'true');
+    }
+    return loaded;
   });
 
   // User Authentication & Role Perspective
@@ -238,8 +251,17 @@ export default function App() {
       if (response.ok) {
         const json = await response.json();
         if (json.records && Array.isArray(json.records)) {
-          setRecords(json.records);
-          localStorage.setItem('slrt_records', JSON.stringify(json.records));
+          const deletedIdsString = localStorage.getItem('slrt_deleted_record_ids') || '[]';
+          let deletedIds: string[] = [];
+          try {
+            deletedIds = JSON.parse(deletedIdsString);
+          } catch (e) {}
+
+          const filtered = json.records.filter((rec: any) => {
+            return !deletedIds.includes(rec.id) && !rec.isDeleted && rec.isDeleted !== 'true';
+          });
+          setRecords(filtered);
+          localStorage.setItem('slrt_records', JSON.stringify(filtered));
         }
         if (json.facilitators && Array.isArray(json.facilitators)) {
           const reconciled = getReconciledFacilitators(json.facilitators);
@@ -498,8 +520,17 @@ export default function App() {
           localStorage.setItem('slrt_facilitators', JSON.stringify(reconciled));
         }
         if (json.records && Array.isArray(json.records)) {
-          setRecords(json.records);
-          localStorage.setItem('slrt_records', JSON.stringify(json.records));
+          const deletedIdsString = localStorage.getItem('slrt_deleted_record_ids') || '[]';
+          let deletedIds: string[] = [];
+          try {
+            deletedIds = JSON.parse(deletedIdsString);
+          } catch (e) {}
+
+          const filtered = json.records.filter((rec: any) => {
+            return !deletedIds.includes(rec.id) && !rec.isDeleted && rec.isDeleted !== 'true';
+          });
+          setRecords(filtered);
+          localStorage.setItem('slrt_records', JSON.stringify(filtered));
         }
         const now = new Date();
         setLastCloudSync(now.toLocaleTimeString('id-ID'));
@@ -1350,6 +1381,17 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
   // Delete Record
   const handleDeleteRecord = (id: string) => {
+    try {
+      const deletedIdsString = localStorage.getItem('slrt_deleted_record_ids') || '[]';
+      const deletedIds = JSON.parse(deletedIdsString);
+      if (!deletedIds.includes(id)) {
+        deletedIds.push(id);
+        localStorage.setItem('slrt_deleted_record_ids', JSON.stringify(deletedIds));
+      }
+    } catch (e) {
+      console.error("Error storing deleted record ID:", e);
+    }
+
     setRecords(prev => prev.filter(rec => rec.id !== id));
     if (selectedRecordId === id) {
       const remaining = records.filter(rec => rec.id !== id);
@@ -1737,6 +1779,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
   // Seed Reset
   const handleResetToDemo = () => {
     if (window.confirm("Apakah Anda yakin ingin mengatur ulang data kembali ke data contoh bawaan?")) {
+      localStorage.removeItem('slrt_deleted_record_ids');
       setRecords(INITIAL_RECORDS);
       setSelectedRecordId('rec-1');
       localStorage.setItem('slrt_records', JSON.stringify(INITIAL_RECORDS));
