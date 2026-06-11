@@ -87,9 +87,16 @@ export default function BentoRecordDetails({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <h3 className="text-2xl font-bold tracking-tight text-slate-900 truncate font-display">
-              {rec.namaKlien}
-            </h3>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-2xl font-bold tracking-tight text-slate-900 truncate font-display">
+                {rec.namaKlien}
+              </h3>
+              {rec.isHighPriority && (
+                <span className="px-2 py-0.5 text-[9px] font-black rounded-lg bg-rose-600 text-white uppercase tracking-wider inline-flex items-center animate-pulse shadow-xs">
+                  🚨 PRIORITAS TINGGI
+                </span>
+              )}
+            </div>
             <span className={`px-3 py-1 text-xs font-bold rounded-full uppercase tracking-wider shrink-0 inline-flex items-center gap-1.5 self-start sm:self-center ${statusStyle.badge}`}>
               <span className={`w-1.5 h-1.5 rounded-full bg-white`} />
               {rec.status}
@@ -148,7 +155,7 @@ export default function BentoRecordDetails({
                 {rec.statusKunjungan === 'Sudah Dikunjungi' ? (
                   <>
                     <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                    Sudah Dikunjungi (Verified)
+                    SUDAH DIKUNJUNGKUNJUNGI (VERIFIED)
                   </>
                 ) : (
                   <>
@@ -210,7 +217,7 @@ export default function BentoRecordDetails({
                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Catatan Auditor Lapangan / Fasilitator:</p>
                      <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl">
                        <p className="text-slate-700 text-xs italic leading-relaxed">
-                         "{rec.catatanPemeriksa || 'Telah diverifikasi sesuai standar operational SLRT Dinsos Kota Tanjungbalai.'}"
+                         "{catatan || 'Telah diverifikasi sesuai standar operational SLRT Dinsos Kota Tanjungbalai.'}"
                        </p>
                      </div>
                    </div>
@@ -256,10 +263,10 @@ export default function BentoRecordDetails({
            {/* 1. Foto KK / KTP */}
            <div className="space-y-1">
              <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight block">1. Bukti Gambar KK / KTP</span>
-             {rec.fotoKkKtp ? (
+             {fotoKk ? (
                <div className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in">
                  <img 
-                   src={getSafeBase64Url(rec.fotoKkKtp)} 
+                   src={getSafeBase64Url(fotoKk)} 
                    alt="Foto KK / KTP" 
                    referrerPolicy="no-referrer"
                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-350"
@@ -279,10 +286,10 @@ export default function BentoRecordDetails({
            {/* 2. Foto Depan Rumah */}
            <div className="space-y-1">
              <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight block">2. Foto Depan Rumah</span>
-             {rec.fotoDepanRumah ? (
+             {fotoRumah ? (
                <div className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in">
                  <img 
-                   src={getSafeBase64Url(rec.fotoDepanRumah)} 
+                   src={getSafeBase64Url(fotoRumah)} 
                    alt="Foto Depan Rumah" 
                    referrerPolicy="no-referrer"
                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-350"
@@ -302,10 +309,10 @@ export default function BentoRecordDetails({
            {/* 3. Foto Ops Kunjungan */}
            <div className="space-y-1">
              <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight block">3. Foto Kontrol Kunjungan</span>
-             {rec.dokumentasiBukti ? (
+             {fotoOps ? (
                <div className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in">
                  <img 
-                   src={getSafeBase64Url(rec.dokumentasiBukti)} 
+                   src={getSafeBase64Url(fotoOps)} 
                    alt="Foto Kontrol Lapangan" 
                    referrerPolicy="no-referrer"
                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-350"

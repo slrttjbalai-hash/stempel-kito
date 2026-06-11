@@ -146,6 +146,68 @@ function parseVerificationDate(dateStr: string | undefined): Date | null {
   return null;
 }
 
+// Helper to save a record to local overrides
+function saveRecordOverride(rec: SLRTRecord) {
+  try {
+    const saved = localStorage.getItem('slrt_record_overrides') || '{}';
+    const overrides = JSON.parse(saved);
+    overrides[rec.id] = rec;
+    localStorage.setItem('slrt_record_overrides', JSON.stringify(overrides));
+  } catch (e) {
+    console.error("Gagal menyimpan override rekaman lokal:", e);
+  }
+}
+
+// Helper to remove a record from local overrides
+function deleteRecordOverride(id: string) {
+  try {
+    const saved = localStorage.getItem('slrt_record_overrides') || '{}';
+    const overrides = JSON.parse(saved);
+    if (overrides[id]) {
+      delete overrides[id];
+      localStorage.setItem('slrt_record_overrides', JSON.stringify(overrides));
+    }
+  } catch (e) {
+    console.error("Gagal menghapus override rekaman lokal:", e);
+  }
+}
+
+// Helper to merge cloud records with local overrides
+function mergeRecordsWithOverrides(cloudRecords: SLRTRecord[]): SLRTRecord[] {
+  try {
+    const savedOver = localStorage.getItem('slrt_record_overrides');
+    if (!savedOver) return cloudRecords;
+    const overrides = JSON.parse(savedOver);
+    
+    const mergedList = [...cloudRecords];
+    const deletedIdsString = localStorage.getItem('slrt_deleted_record_ids') || '[]';
+    let deletedIds: string[] = [];
+    try { deletedIds = JSON.parse(deletedIdsString); } catch(e) {}
+
+    Object.keys(overrides).forEach(id => {
+      // Do not include deleted overrides
+      if (deletedIds.includes(id)) {
+        return;
+      }
+      const existingIndex = mergedList.findIndex(r => r.id === id);
+      if (existingIndex !== -1) {
+        // Merge local overrides (has precedence)
+        mergedList[existingIndex] = {
+          ...mergedList[existingIndex],
+          ...overrides[id]
+        };
+      } else {
+        // Completely local record
+        mergedList.unshift(overrides[id]);
+      }
+    });
+    return mergedList;
+  } catch (e) {
+    console.error("Gagal melakukan merge data lokal dengan awan:", e);
+    return cloudRecords;
+  }
+}
+
 export default function App() {
   // State for database records
   const [records, setRecords] = useState<SLRTRecord[]>(() => {
@@ -163,7 +225,7 @@ export default function App() {
     } catch (e) {
       loaded = loaded.filter(rec => !rec.isDeleted && (rec as any).isDeleted !== 'true');
     }
-    return loaded;
+    return mergeRecordsWithOverrides(loaded);
   });
 
   // User Authentication & Role Perspective
@@ -260,8 +322,9 @@ export default function App() {
           const filtered = json.records.filter((rec: any) => {
             return !deletedIds.includes(rec.id) && !rec.isDeleted && rec.isDeleted !== 'true';
           });
-          setRecords(filtered);
-          localStorage.setItem('slrt_records', JSON.stringify(filtered));
+          const merged = mergeRecordsWithOverrides(filtered);
+          setRecords(merged);
+          localStorage.setItem('slrt_records', JSON.stringify(merged));
         }
         if (json.facilitators && Array.isArray(json.facilitators)) {
           const reconciled = getReconciledFacilitators(json.facilitators);
@@ -350,6 +413,18 @@ export default function App() {
   const [verifierNamaPendata, setVerifierNamaPendata] = useState('');
   const [verifierFotoKkKtp, setVerifierFotoKkKtp] = useState('');
   const [verifierFotoDepanRumah, setVerifierFotoDepanRumah] = useState('');
+
+  const memoizedVerifierFotoKkKtp = useMemo(() => {
+    return getSafeBase64Url(verifierFotoKkKtp);
+  }, [verifierFotoKkKtp]);
+
+  const memoizedVerifierFotoDepanRumah = useMemo(() => {
+    return getSafeBase64Url(verifierFotoDepanRumah);
+  }, [verifierFotoDepanRumah]);
+
+  const memoizedVerifierPhoto = useMemo(() => {
+    return getSafeBase64Url(verifierPhoto);
+  }, [verifierPhoto]);
   const [selectedFacilitatorFilter, setSelectedFacilitatorFilter] = useState<string>('all');
   const [selectedPendataFilter, setSelectedPendataFilter] = useState<string>('all');
   const [visiblePasswords, setVisiblePasswords] = useState<{[key: string]: boolean}>({});
@@ -372,6 +447,15 @@ export default function App() {
   const [wargaAddPengaduan, setWargaAddPengaduan] = useState('');
   const [wargaAddPekerjaan, setWargaAddPekerjaan] = useState('');
   const [wargaAddNik, setWargaAddNik] = useState('');
+  const [wargaAddNamaKuasa, setWargaAddNamaKuasa] = useState('-');
+  const [wargaAddDokumen, setWargaAddDokumen] = useState('KK, KTP');
+  const [wargaAddStatus, setWargaAddStatus] = useState('Miskin');
+  const [wargaAddBantuanDiterima, setWargaAddBantuanDiterima] = useState('Belum Ada');
+  const [wargaAddStatusRumah, setWargaAddStatusRumah] = useState('Milik Sendiri');
+  const [wargaAddJenisPenerangan, setWargaAddJenisPenerangan] = useState('PLN Bersubsidi 450W');
+  const [wargaAddMck, setWargaAddMck] = useState('Sendiri Layak');
+  const [wargaAddPendapatanPerbulan, setWargaAddPendapatanPerbulan] = useState('');
+  const [wargaAddJenisLayanan, setWargaAddJenisLayanan] = useState('');
   const [wargaFormSuccess, setWargaFormSuccess] = useState<string | null>(null);
 
   const [backgroundSyncStatus, setBackgroundSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
@@ -529,8 +613,9 @@ export default function App() {
           const filtered = json.records.filter((rec: any) => {
             return !deletedIds.includes(rec.id) && !rec.isDeleted && rec.isDeleted !== 'true';
           });
-          setRecords(filtered);
-          localStorage.setItem('slrt_records', JSON.stringify(filtered));
+          const merged = mergeRecordsWithOverrides(filtered);
+          setRecords(merged);
+          localStorage.setItem('slrt_records', JSON.stringify(merged));
         }
         const now = new Date();
         setLastCloudSync(now.toLocaleTimeString('id-ID'));
@@ -947,6 +1032,13 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Check if case-insensitive keywords for high-priority are in text description
+  const checkIsHighPriority = (text: string | undefined): boolean => {
+    if (!text) return false;
+    const lower = text.toLowerCase();
+    return lower.includes('darurat') || lower.includes('stroke') || lower.includes('butuh segera');
+  };
+
   // Submit form handler
   const handleSubmitRecord = (e: React.FormEvent) => {
     e.preventDefault();
@@ -986,12 +1078,19 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       pendapatanPerbulan: formPendapatanPerbulan.trim() || 'Tidak Tetap/Kerja Serabutan',
       jenisPengaduan: formJenisPengaduan.trim(),
       jenisLayanan: formJenisLayanan.trim() || 'Rujukan Bantuan Sosial',
+      isHighPriority: checkIsHighPriority(formJenisPengaduan.trim()),
       
       // Keep existing role/status properties if editing, or default to initial state
       statusKunjungan: existingRec ? existingRec.statusKunjungan : 'Belum Dikunjungi',
       tanggalPemeriksaan: existingRec?.tanggalPemeriksaan,
       catatanPemeriksa: existingRec?.catatanPemeriksa,
       dokumentasiBukti: existingRec?.dokumentasiBukti,
+      fotoKkKtp: existingRec?.fotoKkKtp,
+      fotoDepanRumah: existingRec?.fotoDepanRumah,
+      foto_hunian_url: existingRec?.foto_hunian_url,
+      foto_ktp_url: existingRec?.foto_ktp_url,
+      namaPendata: existingRec?.namaPendata,
+      catatan_pendata: existingRec?.catatan_pendata,
       diinputOleh: existingRec ? existingRec.diinputOleh : 'Admin'
     };
 
@@ -1003,6 +1102,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       setRecords(prev => [compiledRecord, ...prev]);
       setSelectedRecordId(compiledRecord.id);
     }
+
+    saveRecordOverride(compiledRecord);
 
     // Auto-sync directly to Google Sheets database in the background
     handleSyncToGoogleSheets(compiledRecord, true);
@@ -1246,28 +1347,36 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
   // Handler helper to initiate verification from facilitator perspective
   const handleOpenVerifierModal = (rec: SLRTRecord) => {
     setSelectedVerifierRecord(rec);
-    setVerifierNotes('');
+    setVerifierNotes(rec.catatanPemeriksa || rec.catatan_pendata || '');
     setVerifierNamaPendata(rec.namaPendata || rec.namaFasilitator || session?.name || '');
-    setVerifierFotoKkKtp(rec.fotoKkKtp || '');
-    setVerifierFotoDepanRumah(rec.fotoDepanRumah || '');
+    setVerifierFotoKkKtp(rec.fotoKkKtp || rec.foto_ktp_url || '');
+    setVerifierFotoDepanRumah(rec.fotoDepanRumah || rec.foto_hunian_url || '');
     
-    // Random select standard Unsplash realistic poor-medium housing conditions or document audit imagery
-    const housePhotos = [
-      'https://images.unsplash.com/photo-1542831371-29b0f74f9713?auto=format&fit=crop&q=80&w=400', // poverty study
-      'https://images.unsplash.com/photo-1584824486509-112e4181ff6b?auto=format&fit=crop&q=80&w=400', // paperwork
-      'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=400', // rustic wall
-      'https://images.unsplash.com/photo-1516880711640-ef7db81be3e1?auto=format&fit=crop&q=80&w=400', // wooden structure
-    ];
-    const pickedPhoto = housePhotos[Math.floor(Math.random() * housePhotos.length)];
-    setVerifierPhoto(pickedPhoto);
+    // Use existing verifier photo (dokumentasiBukti) if present, otherwise set a random realistic placeholder
+    if (rec.dokumentasiBukti) {
+      setVerifierPhoto(rec.dokumentasiBukti);
+    } else {
+      const housePhotos = [
+        'https://images.unsplash.com/photo-1542831371-29b0f74f9713?auto=format&fit=crop&q=80&w=400', // poverty study
+        'https://images.unsplash.com/photo-1584824486509-112e4181ff6b?auto=format&fit=crop&q=80&w=400', // paperwork
+        'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=400', // rustic wall
+        'https://images.unsplash.com/photo-1516880711640-ef7db81be3e1?auto=format&fit=crop&q=80&w=400', // wooden structure
+      ];
+      const pickedPhoto = housePhotos[Math.floor(Math.random() * housePhotos.length)];
+      setVerifierPhoto(pickedPhoto);
+    }
 
-    const today = new Date();
-    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-    const months = [
-      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
-      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-    ];
-    setVerifierDate(`${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`);
+    if (rec.tanggalPemeriksaan) {
+      setVerifierDate(rec.tanggalPemeriksaan);
+    } else {
+      const today = new Date();
+      const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const months = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      ];
+      setVerifierDate(`${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`);
+    }
     setShowVerifierModal(true);
   };
 
@@ -1306,6 +1415,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
     // Auto-sync the verified visitation fields back to the Google Sheets central database
     if (compiledRecordForSync) {
+      saveRecordOverride(compiledRecordForSync);
       handleSyncToGoogleSheets(compiledRecordForSync, true);
     }
   };
@@ -1340,24 +1450,26 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       hariTanggal: dateFormatted,
       namaKlien: wargaAddNama.trim(),
       pekerjaanKrt: wargaAddPekerjaan.trim() || 'Tidak Tetap/Serabutan',
-      namaKuasa: '-',
+      namaKuasa: wargaAddNamaKuasa.trim() || '-',
       alamatKlien: wargaAddAlamat.trim() || 'Alamat dikonfirmasi saat kunjungan lapangan.',
       noTelpon: wargaAddPhone.trim(),
-      dokumen: 'KK, KTP (Akan difoto oleh Fasilitator)',
-      status: 'Miskin', // Di-audit oleh fasilitator
-      bantuanDiterima: 'Belum Ada',
-      statusRumah: 'Milik Sendiri',
-      jenisPenerangan: 'PLN Bersubsidi 450W',
-      mck: 'Sendiri Kurang Layak',
-      pendapatanPerbulan: 'Mekanisme verifikasi pendapatan saat kunjungan.',
+      dokumen: wargaAddNik.trim() ? `KK, KTP (NIK: ${wargaAddNik.trim()})` : wargaAddDokumen.trim(),
+      status: wargaAddStatus,
+      bantuanDiterima: wargaAddBantuanDiterima.trim() || 'Belum Ada',
+      statusRumah: wargaAddStatusRumah,
+      jenisPenerangan: wargaAddJenisPenerangan,
+      mck: wargaAddMck,
+      pendapatanPerbulan: wargaAddPendapatanPerbulan.trim() || 'Tidak Tetap/Kerja Serabutan',
       jenisPengaduan: wargaAddPengaduan.trim(),
-      jenisLayanan: 'Pengusulan DTKS & Bantuan Sosial Berjalan',
+      jenisLayanan: wargaAddJenisLayanan.trim() || 'Pengusulan DTKS & Bantuan Sosial Berjalan',
+      isHighPriority: checkIsHighPriority(wargaAddPengaduan.trim()),
       
       statusKunjungan: 'Belum Dikunjungi',
       diinputOleh: 'Warga'
     };
 
     setRecords(prev => [CitizenReport, ...prev]);
+    saveRecordOverride(CitizenReport);
     
     // Auto-sync directly to Google Sheets database in the background
     handleSyncToGoogleSheets(CitizenReport, true);
@@ -1372,6 +1484,15 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setWargaAddPengaduan('');
     setWargaAddPekerjaan('');
     setWargaAddNik('');
+    setWargaAddNamaKuasa('-');
+    setWargaAddDokumen('KK, KTP');
+    setWargaAddStatus('Miskin');
+    setWargaAddBantuanDiterima('Belum Ada');
+    setWargaAddStatusRumah('Milik Sendiri');
+    setWargaAddJenisPenerangan('PLN Bersubsidi 450W');
+    setWargaAddMck('Sendiri Layak');
+    setWargaAddPendapatanPerbulan('');
+    setWargaAddJenisLayanan('');
 
     // Clear success message after 12 secs
     setTimeout(() => {
@@ -1381,6 +1502,10 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
   // Delete Record
   const handleDeleteRecord = (id: string) => {
+    if (userRole !== 'admin') {
+      alert("Hanya Admin Database yang diperbolehkan menghapus data.");
+      return;
+    }
     try {
       const deletedIdsString = localStorage.getItem('slrt_deleted_record_ids') || '[]';
       const deletedIds = JSON.parse(deletedIdsString);
@@ -1393,6 +1518,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     }
 
     setRecords(prev => prev.filter(rec => rec.id !== id));
+    deleteRecordOverride(id);
     if (selectedRecordId === id) {
       const remaining = records.filter(rec => rec.id !== id);
       setSelectedRecordId(remaining.length > 0 ? remaining[0].id : null);
@@ -1780,6 +1906,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
   const handleResetToDemo = () => {
     if (window.confirm("Apakah Anda yakin ingin mengatur ulang data kembali ke data contoh bawaan?")) {
       localStorage.removeItem('slrt_deleted_record_ids');
+      localStorage.removeItem('slrt_record_overrides');
       setRecords(INITIAL_RECORDS);
       setSelectedRecordId('rec-1');
       localStorage.setItem('slrt_records', JSON.stringify(INITIAL_RECORDS));
@@ -2511,18 +2638,21 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     // SECTION V
     currentY = drawSectionHeader(currentY, 'V. DOKUMENTASI HASIL VERIFIKASI LAPORAN');
     
-    const boxWidth = 80;
-    const boxHeight = 44;
+    const boxWidth = 54;
+    const boxHeight = 40;
     const boxY = currentY + 3;
     
     // Column 1 Box
     doc.setDrawColor(203, 213, 225);
     doc.setLineWidth(0.2);
     doc.setFillColor(248, 250, 252);
-    doc.rect(16, boxY, boxWidth, boxHeight, 'FD');
+    doc.rect(15, boxY, boxWidth, boxHeight, 'FD');
     
     // Column 2 Box
-    doc.rect(114, boxY, boxWidth, boxHeight, 'FD');
+    doc.rect(78, boxY, boxWidth, boxHeight, 'FD');
+
+    // Column 3 Box
+    doc.rect(141, boxY, boxWidth, boxHeight, 'FD');
 
     // Helper to draw geometric placeholder graphics with camera icon
     const drawPhotoPlaceholder = (x: number, y: number, w: number, h: number, title: string) => {
@@ -2533,30 +2663,31 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       const cx = x + (w / 2);
       const cy = y + (h / 2) - 3;
       doc.setFillColor(241, 245, 249);
-      doc.rect(cx - 6, cy - 4, 12, 8, 'F');
+      doc.rect(cx - 5, cy - 3, 10, 6, 'F');
       
       // Draw camera lens circle
       doc.setDrawColor(148, 163, 184);
-      doc.setLineWidth(0.5);
-      doc.circle(cx, cy, 2);
+      doc.setLineWidth(0.4);
+      doc.circle(cx, cy, 1.8);
       
       // Flash bar
       doc.setFillColor(148, 163, 184);
-      doc.rect(cx - 3, cy - 6, 6, 1.5, 'F');
+      doc.rect(cx - 2.5, cy - 4.5, 5, 1, 'F');
 
       doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(7.5);
+      doc.setFontSize(6.5);
       doc.setTextColor(148, 163, 184);
-      doc.text(title, cx, cy + 9, { align: 'center' });
+      doc.text(title, cx, cy + 7, { align: 'center' });
       
       doc.setFont('Helvetica', 'italic');
-      doc.setFontSize(6);
-      doc.text('Bukti Verifikasi Lapangan (GPS Stamped)', cx, cy + 13, { align: 'center' });
+      doc.setFontSize(5.5);
+      doc.text('Bukti Lapangan (GPS)', cx, cy + 10.5, { align: 'center' });
     };
 
     // Load actual photographs with crossOrigin safety
-    const img1Base64 = await loadAnyImageBase64(rec.fotoDepanRumah || rec.dokumentasiBukti || '');
-    const img2Base64 = await loadAnyImageBase64(rec.fotoKkKtp || '');
+    const img1Base64 = await loadAnyImageBase64(rec.fotoDepanRumah || rec.foto_hunian_url || '');
+    const img2Base64 = await loadAnyImageBase64(rec.fotoKkKtp || rec.foto_ktp_url || '');
+    const img3Base64 = await loadAnyImageBase64(rec.dokumentasiBukti || '');
 
     // Function to parse dynamic image format from mime types with robust fallback
     const detectFormat = (base64Str: string): string => {
@@ -2570,37 +2701,50 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     if (img1Base64) {
       try {
         const fmt1 = detectFormat(img1Base64);
-        doc.addImage(img1Base64, fmt1, 16.5, boxY + 0.5, boxWidth - 1, boxHeight - 1);
+        doc.addImage(img1Base64, fmt1, 15.5, boxY + 0.5, boxWidth - 1, boxHeight - 1);
       } catch (err) {
-        drawPhotoPlaceholder(16, boxY, boxWidth, boxHeight, 'FOTO KONDISI RUMAH KLIEN');
+        drawPhotoPlaceholder(15, boxY, boxWidth, boxHeight, 'FOTO DEPAN RUMAH');
       }
     } else {
-      drawPhotoPlaceholder(16, boxY, boxWidth, boxHeight, 'FOTO KONDISI RUMAH KLIEN');
+      drawPhotoPlaceholder(15, boxY, boxWidth, boxHeight, 'FOTO DEPAN RUMAH');
     }
 
     if (img2Base64) {
       try {
         const fmt2 = detectFormat(img2Base64);
-        doc.addImage(img2Base64, fmt2, 114.5, boxY + 0.5, boxWidth - 1, boxHeight - 1);
+        doc.addImage(img2Base64, fmt2, 78.5, boxY + 0.5, boxWidth - 1, boxHeight - 1);
       } catch (err) {
-        drawPhotoPlaceholder(114, boxY, boxWidth, boxHeight, 'FOTO KK / KTP KLIEN');
+        drawPhotoPlaceholder(78, boxY, boxWidth, boxHeight, 'FOTO KK / KTP');
       }
     } else {
-      drawPhotoPlaceholder(114, boxY, boxWidth, boxHeight, 'FOTO KK / KTP KLIEN');
+      drawPhotoPlaceholder(78, boxY, boxWidth, boxHeight, 'FOTO KK / KTP');
+    }
+
+    if (img3Base64) {
+      try {
+        const fmt3 = detectFormat(img3Base64);
+        doc.addImage(img3Base64, fmt3, 141.5, boxY + 0.5, boxWidth - 1, boxHeight - 1);
+      } catch (err) {
+        drawPhotoPlaceholder(141, boxY, boxWidth, boxHeight, 'FOTO KONTROL KUNJUNGAN');
+      }
+    } else {
+      drawPhotoPlaceholder(141, boxY, boxWidth, boxHeight, 'FOTO KONTROL KUNJUNGAN');
     }
 
     // Captions below photos
     doc.setFont('Helvetica', 'bold');
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setTextColor(51, 65, 85);
-    doc.text('Foto 1: Kondisi Kelayakan Hunian', 16, boxY + boxHeight + 4);
-    doc.text('Foto 2: Berkas Kependudukan', 114, boxY + boxHeight + 4);
+    doc.text('Foto 1: Kelayakan Hunian', 15, boxY + boxHeight + 4);
+    doc.text('Foto 2: Berkas Kependudukan', 78, boxY + boxHeight + 4);
+    doc.text('Foto 3: Kontrol Kunjungan', 141, boxY + boxHeight + 4);
 
     doc.setFont('Helvetica', 'normal');
-    doc.setFontSize(7);
+    doc.setFontSize(6.5);
     doc.setTextColor(100, 116, 139);
-    doc.text('Survei lapangan kondisi tempat tinggal Klien.', 16, boxY + boxHeight + 7);
-    doc.text('Arsip administrasi KK/KTP yang divalidasi.', 114, boxY + boxHeight + 7);
+    doc.text('Kondisi fisik tempat tinggal.', 15, boxY + boxHeight + 7);
+    doc.text('Arsip data kependudukan.', 78, boxY + boxHeight + 7);
+    doc.text('Dokumentasi kontrol petugas.', 141, boxY + boxHeight + 7);
 
     currentY = boxY + boxHeight + 11;
 
@@ -2617,13 +2761,6 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     doc.text('_____________________________', 25, sigY + 20);
     doc.setFont('Helvetica', 'bold');
     doc.text(`( ${rec.namaFasilitator} )`, 25, sigY + 24);
-
-    doc.text('Klien / Penerima Layanan,', 135, sigY);
-    doc.text('Kota Tanjungbalai', 135, sigY + 4);
-    doc.setFont('Helvetica', 'normal');
-    doc.text('_____________________________', 135, sigY + 20);
-    doc.setFont('Helvetica', 'bold');
-    doc.text(`( ${rec.namaKlien} )`, 135, sigY + 24);
 
     // DRAW FOOTERS DYNAMICALLY
     const drawPageFooter = (pageNum: number, totalPages: number) => {
@@ -2880,108 +3017,240 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   </div>
                 )}
 
-                <form onSubmit={handleWargaSubmitReport} className="flex flex-col gap-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Nama Lengkap Klien *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Nama Kepala Keluarga/Klien..."
-                        value={wargaAddNama}
-                        onChange={(e) => setWargaAddNama(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 font-sans"
-                      />
+                <form onSubmit={handleWargaSubmitReport} className="flex flex-col gap-5 text-xs">
+                  {/* SECTION B - IDENTITAS */}
+                  <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-150 flex flex-col gap-4">
+                    <h4 className="text-[11px] font-black text-amber-700 uppercase tracking-widest pb-1 border-b border-rose-200/50">
+                      B. Profil Identitas Kepala Keluarga &amp; Klien
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">5. Nama Klien Utama *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Nama lengkap pemohon/klien..."
+                          value={wargaAddNama}
+                          onChange={(e) => setWargaAddNama(e.target.value)}
+                          className="w-full bg-white border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 font-sans"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">9. No. Telpon / HP Aktif *</label>
+                        <input
+                          type="tel"
+                          required
+                          placeholder="Contoh: 08123456789 (Tanpa spasi)"
+                          value={wargaAddPhone}
+                          onChange={(e) => setWargaAddPhone(e.target.value)}
+                          className="w-full bg-white border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 font-sans"
+                        />
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">No. Telpon/WhatsApp (Lacak) *</label>
-                      <input
-                        type="tel"
-                        required
-                        placeholder="Contoh: 08123456789 (Tanpa spasi)"
-                        value={wargaAddPhone}
-                        onChange={(e) => setWargaAddPhone(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 font-sans"
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">3. Kecamatan Klien *</label>
+                        <select
+                          value={wargaAddKecamatan}
+                          onChange={(e) => {
+                            setWargaAddKecamatan(e.target.value);
+                            setWargaAddKelurahan(TANJUNGBALAI_LOCATIONS[e.target.value as keyof typeof TANJUNGBALAI_LOCATIONS][0]);
+                          }}
+                          className="w-full bg-white border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-850 focus:outline-none focus:border-amber-600 font-sans font-bold cursor-pointer"
+                        >
+                          {Object.keys(TANJUNGBALAI_LOCATIONS).map(kel => (
+                            <option key={kel} value={kel}>{kel}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">2. Kelurahan Klien *</label>
+                        <select
+                          value={wargaAddKelurahan}
+                          onChange={(e) => setWargaAddKelurahan(e.target.value)}
+                          className="w-full bg-white border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-850 focus:outline-none focus:border-amber-600 font-sans font-bold cursor-pointer"
+                        >
+                          {TANJUNGBALAI_LOCATIONS[wargaAddKecamatan as keyof typeof TANJUNGBALAI_LOCATIONS]?.map(kel => (
+                            <option key={kel} value={kel}>{kel}</option>
+                          )) || <option value="">Pilih Kelurahan</option>}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">NIK Klien (16 Digit)</label>
+                        <input
+                          type="text"
+                          placeholder="Masukkan 16 digit NIK..."
+                          value={wargaAddNik}
+                          onChange={(e) => setWargaAddNik(e.target.value)}
+                          className="w-full bg-white border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 font-sans"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">6. Pekerjaan Pokok KRT</label>
+                        <input
+                          type="text"
+                          placeholder="Contoh: Nelayan, Serabutan, IRT..."
+                          value={wargaAddPekerjaan}
+                          onChange={(e) => setWargaAddPekerjaan(e.target.value)}
+                          className="w-full bg-white border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 font-sans"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-slate-505 block mb-1 uppercase tracking-wider">7. Nama Kuasa (Jika Numpang/Kuasa)</label>
+                        <input
+                          type="text"
+                          value={wargaAddNamaKuasa}
+                          onChange={(e) => setWargaAddNamaKuasa(e.target.value)}
+                          className="w-full bg-white border border-slate-202 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 font-sans"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="md:col-span-2">
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">8. Alamat Klien Lengkap</label>
+                        <textarea
+                          rows={2}
+                          placeholder="Sertakan nama jalan, gang, nomor rumah, dan nomor lingkungan..."
+                          value={wargaAddAlamat}
+                          onChange={(e) => setWargaAddAlamat(e.target.value)}
+                          className="w-full bg-white border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 resize-none font-sans leading-relaxed"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-slate-505 block mb-1 uppercase tracking-wider">10. Dokumen Yang Dibawa Klien</label>
+                        <input
+                          type="text"
+                          placeholder="Contoh: KK, KTP, Surat SKTM..."
+                          value={wargaAddDokumen}
+                          onChange={(e) => setWargaAddDokumen(e.target.value)}
+                          className="w-full bg-white border border-slate-202 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 font-sans"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Kecamatan *</label>
-                      <select
-                        value={wargaAddKecamatan}
-                        onChange={(e) => {
-                          setWargaAddKecamatan(e.target.value);
-                          setWargaAddKelurahan(TANJUNGBALAI_LOCATIONS[e.target.value as keyof typeof TANJUNGBALAI_LOCATIONS][0]);
-                        }}
-                        className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-850 focus:outline-none focus:border-amber-600 font-sans font-bold cursor-pointer"
-                      >
-                        {Object.keys(TANJUNGBALAI_LOCATIONS).map(kel => (
-                          <option key={kel} value={kel}>{kel}</option>
-                        ))}
-                      </select>
-                    </div>
+                  {/* SECTION C - SOSIAL EKONOMI */}
+                  <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-150 flex flex-col gap-4">
+                    <h4 className="text-[11px] font-black text-amber-700 uppercase tracking-widest pb-1 border-b border-rose-200/50">
+                      C. Indikator Sosial Ekonomi &amp; Kelayakan Hunian
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-505 block mb-1 uppercase tracking-wider">11. Status Kesejahteraan Klien</label>
+                        <select
+                          value={wargaAddStatus}
+                          onChange={(e) => setWargaAddStatus(e.target.value)}
+                          className="w-full bg-white border border-slate-200 text-xs px-3 py-2.5 rounded-xl outline-none focus:border-amber-600 text-slate-800"
+                        >
+                          <option value="Sangat Miskin">Sangat Miskin</option>
+                          <option value="Miskin">Miskin</option>
+                          <option value="Rentan">Rentan</option>
+                          <option value="Hampir Sejahtera">Hampir Sejahtera</option>
+                        </select>
+                      </div>
 
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Kelurahan *</label>
-                      <select
-                        value={wargaAddKelurahan}
-                        onChange={(e) => setWargaAddKelurahan(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-850 focus:outline-none focus:border-amber-600 font-sans font-bold cursor-pointer"
-                      >
-                        {TANJUNGBALAI_LOCATIONS[wargaAddKecamatan as keyof typeof TANJUNGBALAI_LOCATIONS]?.map(kel => (
-                          <option key={kel} value={kel}>{kel}</option>
-                        )) || <option value="">Pilih Kelurahan</option>}
-                      </select>
+                      <div>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">12. Bantuan Sudah Diperoleh</label>
+                        <input
+                          type="text"
+                          placeholder="Contoh: PKH, BPNT, KIS, atau Belum Ada..."
+                          value={wargaAddBantuanDiterima}
+                          onChange={(e) => setWargaAddBantuanDiterima(e.target.value)}
+                          className="w-full bg-white border border-slate-200 text-xs px-3 py-2.5 rounded-xl outline-none focus:border-amber-600 text-slate-805"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">13. Status Kepemilikan Rumah</label>
+                        <select
+                          value={wargaAddStatusRumah}
+                          onChange={(e) => setWargaAddStatusRumah(e.target.value)}
+                          className="w-full bg-white border border-slate-205 text-xs px-3 py-2.5 rounded-xl outline-none focus:border-amber-600 text-slate-805 font-medium"
+                        >
+                          <option value="Milik Sendiri">Milik Sendiri</option>
+                          <option value="Sewa">Sewa / Kontrak</option>
+                          <option value="Menumpang">Menumpang (Keluarga)</option>
+                          <option value="Lainnya">Lainnya</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">14. Jenis Penerangan Utama</label>
+                        <select
+                          value={wargaAddJenisPenerangan}
+                          onChange={(e) => setWargaAddJenisPenerangan(e.target.value)}
+                          className="w-full bg-white border border-slate-205 text-xs px-3 py-2.5 rounded-xl outline-none focus:border-amber-600 text-slate-805 font-medium"
+                        >
+                          <option value="PLN Bersubsidi 450W">PLN Bersubsidi (450W / 900W)</option>
+                          <option value="PLN Non-Subsidi">PLN Non-Subsidi (&gt;= 1300W)</option>
+                          <option value="Listrik Numpang Tetangga">Listrik Numpang Tetangga</option>
+                          <option value="Tanpa Listrik">Tanpa Listrik</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">15. Kondisi Fasilitas MCK</label>
+                        <select
+                          value={wargaAddMck}
+                          onChange={(e) => setWargaAddMck(e.target.value)}
+                          className="w-full bg-white border border-slate-205 text-xs px-3 py-2.5 rounded-xl outline-none focus:border-amber-600 text-slate-805 font-medium"
+                        >
+                          <option value="Sendiri Layak">Sendiri Layak</option>
+                          <option value="Sendiri Kurang Layak">Sendiri Kurang Layak</option>
+                          <option value="MCK Umum / Bersama">MCK Umum / Bersama</option>
+                          <option value="Tidak Layak / Tidak Ada Toilet">Tidak Layak / Tidak Ada Toilet</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">16. Est. Pendapatan KRT Perbulan</label>
+                        <input
+                          type="text"
+                          placeholder="Contoh: Rp 600.000"
+                          value={wargaAddPendapatanPerbulan}
+                          onChange={(e) => setWargaAddPendapatanPerbulan(e.target.value)}
+                          className="w-full bg-white border border-slate-200 text-xs px-3 py-2.5 rounded-xl outline-none focus:border-amber-600 text-slate-800"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">NIK Klien (Opsional)</label>
-                      <input
-                        type="text"
-                        placeholder="Masukkan 16 digit NIK..."
-                        value={wargaAddNik}
-                        onChange={(e) => setWargaAddNik(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 font-sans"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Pekerjaan Utama</label>
-                      <input
-                        type="text"
-                        placeholder="Contoh: Nelayan, Serabutan, IRT..."
-                        value={wargaAddPekerjaan}
-                        onChange={(e) => setWargaAddPekerjaan(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 font-sans"
-                      />
-                    </div>
-                  </div>
+                  {/* SECTION D - ADUAN */}
+                  <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-150 flex flex-col gap-4">
+                    <h4 className="text-[11px] font-black text-amber-700 uppercase tracking-widest pb-1 border-b border-rose-200/50">
+                      D. Substansi Penyaluran Pengaduan
+                    </h4>
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">17. Rincian Pengaduan / Keluhan Klien *</label>
+                        <textarea
+                          required
+                          rows={3}
+                          placeholder="Jelaskan kondisi ekonomi rumahtangga dan bantuan apa saja yang ingin diajukan (misal: PKH, Bedah Rumah, dll)..."
+                          value={wargaAddPengaduan}
+                          onChange={(e) => setWargaAddPengaduan(e.target.value)}
+                          className="w-full bg-white border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 resize-none leading-relaxed font-sans"
+                        />
+                      </div>
 
-                  <div>
-                    <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Alamat Rumah Lengkap</label>
-                    <textarea
-                      rows={2}
-                      placeholder="Tulis alamat rumah Anda lengkap dengan patokan jalan..."
-                      value={wargaAddAlamat}
-                      onChange={(e) => setWargaAddAlamat(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 resize-none font-sans"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Rincian Pengaduan / Keluhan Rumahtangga *</label>
-                    <textarea
-                      required
-                      rows={3}
-                      placeholder="Jelaskan kondisi ekonomi rumahtangga dan bantuan apa saja yang ingin diajukan (misal: PKH, Bedah Rumah, dll)..."
-                      value={wargaAddPengaduan}
-                      onChange={(e) => setWargaAddPengaduan(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 resize-none leading-relaxed font-sans"
-                    />
+                      <div>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">18. Jenis Layanan Yang Diinginkan / Diusulkan</label>
+                        <input
+                          type="text"
+                          placeholder="Contoh: Reaktivasi KIS PBI, Bedah Rumah RTLH, Beasiswa PIP..."
+                          value={wargaAddJenisLayanan}
+                          onChange={(e) => setWargaAddJenisLayanan(e.target.value)}
+                          className="w-full bg-white border border-slate-200 text-xs px-3 py-2.5 rounded-xl outline-none focus:border-amber-600 text-slate-805 font-medium"
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   <button
@@ -3665,14 +3934,20 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     ))}
                   </select>
                   <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="bg-white border border-slate-200 rounded-lg text-[10px] p-1.5 focus:border-indigo-500 text-slate-705 outline-none"
+                    value={filterKelurahan}
+                    onChange={(e) => setFilterKelurahan(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-lg text-[10px] p-1.5 focus:border-indigo-500 text-slate-755 outline-none font-bold cursor-pointer"
                   >
-                    <option value="">Kesejahteraan</option>
-                    <option value="Sangat Miskin">Sangat Miskin</option>
-                    <option value="Miskin">Miskin</option>
-                    <option value="Rentan">Rentan</option>
+                    <option value="">Kelurahan (Semua)</option>
+                    {filterKecamatan ? (
+                      TANJUNGBALAI_LOCATIONS[filterKecamatan as keyof typeof TANJUNGBALAI_LOCATIONS]?.map(k => (
+                        <option key={k} value={k}>{k}</option>
+                      ))
+                    ) : (
+                      Array.from(new Set(Object.values(TANJUNGBALAI_LOCATIONS).flat())).map(k => (
+                        <option key={k} value={k}>{k}</option>
+                      ))
+                    )}
                   </select>
                 </div>
 
@@ -3895,19 +4170,22 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                             <p className="text-[9px] font-black uppercase text-indigo-600/80 tracking-wide font-mono">
                               {rec.kecamatan}
                             </p>
-                            <p className="text-xs font-bold text-slate-800 mt-0.5">{rec.namaKlien}</p>
-                            <p className="text-[10px] text-slate-450 mt-0.5">Kel. {rec.kelurahan}</p>
+                            <p className="text-xs font-bold text-slate-800 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                              {rec.namaKlien}
+                              {rec.isHighPriority && (
+                                <span className="text-[7.5px] font-black px-1 py-0.5 rounded-md bg-rose-600 text-white uppercase tracking-wider animate-pulse inline-block">
+                                  🚨 PRIORITAS
+                                </span>
+                              )}
+                            </p>
+                            <p className="text-[10px] text-slate-500 mt-0.5 font-sans font-medium">
+                              Saran: <span className="text-indigo-900 font-extrabold">{rec.status}</span>
+                            </p>
                           </div>
                           
                           <div className="flex flex-col items-end gap-1 shrink-0">
-                            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase ${
-                              isSangatMiskin 
-                                ? 'bg-rose-100 text-rose-700' 
-                                : isRentan 
-                                ? 'bg-amber-100 text-amber-800' 
-                                : 'bg-orange-100 text-orange-700'
-                            }`}>
-                              {rec.status.replace('Sangat ', 'S.')}
+                            <span className="text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase bg-emerald-50 text-emerald-800 border border-emerald-250 font-mono tracking-tight shrink-0 whitespace-nowrap">
+                              {rec.kelurahan}
                             </span>
                             
                             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -3918,13 +4196,15 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                               >
                                 <Edit className="w-3 h-3" />
                               </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(rec.id); }}
-                                className="p-1 hover:bg-slate-200 hover:text-rose-600 rounded"
-                                title="Hapus data"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
+                              {userRole === 'admin' && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(rec.id); }}
+                                  className="p-1 hover:bg-slate-200 hover:text-rose-600 rounded"
+                                  title="Hapus data"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -4699,7 +4979,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 
                 {verifierFotoKkKtp ? (
                   <div className="relative h-28 rounded-xl overflow-hidden border border-slate-300">
-                    <img src={verifierFotoKkKtp} className="w-full h-full object-cover" alt="KK/KTP Preview" />
+                    <img src={memoizedVerifierFotoKkKtp} className="w-full h-full object-cover" alt="KK/KTP Preview" />
                     <div className="absolute inset-x-0 bottom-0 bg-slate-900/60 p-1.5 text-center text-[10px] text-white font-bold leading-none">
                       Preview Berkas KK/KTP Siap Simpan
                     </div>
@@ -4759,7 +5039,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 
                 {verifierFotoDepanRumah ? (
                   <div className="relative h-28 rounded-xl overflow-hidden border border-slate-300">
-                    <img src={verifierFotoDepanRumah} className="w-full h-full object-cover" alt="Foto Depan Rumah Preview" />
+                    <img src={memoizedVerifierFotoDepanRumah} className="w-full h-full object-cover" alt="Foto Depan Rumah Preview" />
                     <div className="absolute inset-x-0 bottom-0 bg-slate-900/60 p-1.5 text-center text-[10px] text-white font-bold leading-none">
                       Preview Depan Rumah Siap Simpan
                     </div>
@@ -4802,34 +5082,94 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 )}
               </div>
 
-              <div>
-                <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Atur Foto Kontrol Lapangan (Opsional)</label>
-                <div className="grid grid-cols-4 gap-2 mt-1.5">
-                  {[
-                    { id: 'img1', url: 'https://images.unsplash.com/photo-1542831371-29b0f74f9713?auto=format&fit=crop&q=80&w=400', label: 'Studi Poverty' },
-                    { id: 'img2', url: 'https://images.unsplash.com/photo-1584824486509-112e4181ff6b?auto=format&fit=crop&q=80&w=400', label: 'Arsip Dokumen' },
-                    { id: 'img3', url: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=400', label: 'Dinding Papan' },
-                    { id: 'img4', url: 'https://images.unsplash.com/photo-1516880711640-ef7db81be3e1?auto=format&fit=crop&q=80&w=400', label: 'Rumah Sederhana' }
-                  ].map((img) => (
-                    <button
-                      key={img.id}
-                      type="button"
-                      onClick={() => setVerifierPhoto(img.url)}
-                      className={`relative overflow-hidden h-14 rounded-lg border-2 transition-all cursor-pointer ${
-                        verifierPhoto === img.url ? 'border-emerald-650 shadow-md scale-102' : 'border-slate-150 hover:border-slate-300'
-                      }`}
+              {/* Foto Kontrol Lapangan Section */}
+              <div className="border border-slate-150 p-3 rounded-2xl bg-slate-50/50 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black text-slate-650 uppercase tracking-wider block">📷 Ambil &amp; Upload Foto Kontrol Kunjungan (Opsional)</span>
+                  {verifierPhoto && (
+                    <button 
+                      type="button" 
+                      onClick={() => setVerifierPhoto('')} 
+                      className="text-[10px] text-rose-600 font-bold hover:underline cursor-pointer"
                     >
-                      <img src={img.url} className="w-full h-full object-cover" alt={img.label} referrerPolicy="no-referrer" />
-                      {verifierPhoto === img.url && (
-                        <div className="absolute inset-0 bg-emerald-600/30 flex items-center justify-center text-white text-xs font-bold font-sans">
-                          ✓
-                        </div>
-                      )}
+                      Hapus
                     </button>
-                  ))}
+                  )}
                 </div>
+                
+                {verifierPhoto ? (
+                   <div className="relative h-28 rounded-xl overflow-hidden border border-slate-300">
+                     <img src={memoizedVerifierPhoto} className="w-full h-full object-cover" alt="Foto Kontrol Lapangan Preview" />
+                     <div className="absolute inset-x-0 bottom-0 bg-slate-900/60 p-1.5 text-center text-[10px] text-white font-bold leading-none">
+                       Preview Kontrol Kunjungan Siap Simpan
+                     </div>
+                   </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Live Camera Option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCameraTargetName('Foto Kontrol Lapangan');
+                        setOnPhotoCapture(() => setVerifierPhoto);
+                        setCameraModalOpen(true);
+                        startLiveCamera(cameraFacingMode);
+                      }}
+                      className="h-14 border border-dashed border-emerald-300 rounded-xl flex flex-col items-center justify-center bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer text-emerald-800 text-[10px] font-medium animate-pulse"
+                    >
+                      <Camera className="w-4 h-4 mb-0.5 text-emerald-600" />
+                      <span className="font-bold">Ambil &amp; Geotag (Live)</span>
+                    </button>
+
+                    {/* File Upload Option */}
+                    <label className="h-14 border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center bg-white hover:bg-slate-100 transition-colors cursor-pointer text-slate-650 text-[10px] font-medium text-center">
+                      <Upload className="w-4 h-4 mb-0.5 text-slate-450" />
+                      <span>Upload &amp; Kompres</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleImageUploadHelper(file, setVerifierPhoto);
+                          }
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                <div className="mt-2 pt-1 border-t border-slate-150/40">
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight block mb-1">Rujukan Cepat / Pilihan Preset Lapangan:</span>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { id: 'img1', url: 'https://images.unsplash.com/photo-1542831371-29b0f74f9713?auto=format&fit=crop&q=80&w=400', label: 'Studi Poverty' },
+                      { id: 'img2', url: 'https://images.unsplash.com/photo-1584824486509-112e4181ff6b?auto=format&fit=crop&q=80&w=400', label: 'Arsip Dokumen' },
+                      { id: 'img3', url: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=400', label: 'Dinding Papan' },
+                      { id: 'img4', url: 'https://images.unsplash.com/photo-1516880711640-ef7db81be3e1?auto=format&fit=crop&q=80&w=400', label: 'Rumah Sederhana' }
+                    ].map((img) => (
+                      <button
+                        key={img.id}
+                        type="button"
+                        onClick={() => setVerifierPhoto(img.url)}
+                        className={`relative overflow-hidden h-10 rounded-lg border-2 transition-all cursor-pointer ${
+                          verifierPhoto === img.url ? 'border-emerald-650 shadow-md scale-102' : 'border-slate-150 hover:border-slate-300'
+                        }`}
+                      >
+                        <img src={img.url} className="w-full h-full object-cover" alt={img.label} referrerPolicy="no-referrer" />
+                        {verifierPhoto === img.url && (
+                          <div className="absolute inset-0 bg-emerald-600/30 flex items-center justify-center text-white text-[10px] font-bold font-sans">
+                            ✓
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <p className="text-[9px] text-slate-450 italic mt-1 leading-normal font-sans">
-                  * Gambar di atas mewakili rujukan audit ops geospasial opsional oleh Dinsos Kota Tanjungbalai.
+                  * Gambar di atas mewakili rujukan audit ops geospasial opsional oleh Dinsos Kota Tanjungbalai atau hasil pengambilan lapangan.
                 </p>
               </div>
 

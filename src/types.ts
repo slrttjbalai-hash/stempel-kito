@@ -18,6 +18,8 @@ export interface SLRTRecord {
   pendapatanPerbulan: string;
   jenisPengaduan: string;
   jenisLayanan: string;
+  isHighPriority?: boolean; // Label prioritas tinggi otomatis
+  isDeleted?: boolean | string; // Flag to check if record is deleted
   
   // Multi-user & flow states
   statusKunjungan?: 'Belum Dikunjungi' | 'Sudah Dikunjungi';
