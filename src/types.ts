@@ -214,6 +214,19 @@ export const getSafeBase64Url = (srcUrl: string | undefined): string => {
   if (!srcUrl) return '';
   const trimmed = srcUrl.trim();
   if (!trimmed) return '';
+
+  // Detect and resolve Google Drive shared URLs into direct embed image sources
+  if (trimmed.includes('drive.google.com')) {
+    const matchD = trimmed.match(/\/d\/([a-zA-Z0-9_-]{25,})/);
+    if (matchD && matchD[1]) {
+      return `https://drive.google.com/uc?export=view&id=${matchD[1]}`;
+    }
+    const matchId = trimmed.match(/[?&]id=([a-zA-Z0-9_-]{25,})/);
+    if (matchId && matchId[1]) {
+      return `https://drive.google.com/uc?export=view&id=${matchId[1]}`;
+    }
+  }
+
   if (
     trimmed.startsWith('data:') ||
     trimmed.startsWith('http://') ||

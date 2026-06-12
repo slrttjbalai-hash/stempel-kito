@@ -154,12 +154,35 @@ function parseVerificationDate(dateStr: string | undefined): Date | null {
   return null;
 }
 
+// Helper to strip heavy base64 image strings from record properties to keep LocalStorage size under 5MB quota
+function stripPhotosFromRecord(rec: any): any {
+  if (!rec) return rec;
+  const stripped = { ...rec };
+  const keysToClean = [
+    'fotoKkKtp', 'foto_ktp_url', 'foto_kk_ktp', 'fotokkktp', 'fotoKk', 'fotoKtp',
+    'fotoDepanRumah', 'foto_hunian_url', 'foto_depan_rumah', 'fotodepanrumah', 'fotoRumah',
+    'dokumentasiBukti', 'dokumentasibukti', 'dokumentasi_bukti', 'dokumentasi', 'fotoOps', 'foto_ops', 'foto_ops_url'
+  ];
+  keysToClean.forEach(key => {
+    if (stripped[key] && typeof stripped[key] === 'string' && stripped[key].length > 150) {
+      stripped[key] = '';
+    }
+  });
+  return stripped;
+}
+
+// Helper to strip heavy base64 image strings from a list of records
+function stripPhotosFromRecordList(list: any[]): any[] {
+  if (!list) return [];
+  return list.map(stripPhotosFromRecord);
+}
+
 // Helper to save a record to local overrides
 function saveRecordOverride(rec: SLRTRecord) {
   try {
     const saved = localStorage.getItem('slrt_record_overrides') || '{}';
     const overrides = JSON.parse(saved);
-    overrides[rec.id] = rec;
+    overrides[rec.id] = stripPhotosFromRecord(rec);
     localStorage.setItem('slrt_record_overrides', JSON.stringify(overrides));
   } catch (e) {
     console.error("Gagal menyimpan override rekaman lokal:", e);
@@ -173,8 +196,13 @@ function deleteRecordOverride(id: string) {
     const overrides = JSON.parse(saved);
     if (overrides[id]) {
       delete overrides[id];
-      localStorage.setItem('slrt_record_overrides', JSON.stringify(overrides));
     }
+    // Clean up any remaining legacy entries as well to recover storage space
+    const cleaned: any = {};
+    Object.keys(overrides).forEach(key => {
+      cleaned[key] = stripPhotosFromRecord(overrides[key]);
+    });
+    localStorage.setItem('slrt_record_overrides', JSON.stringify(cleaned));
   } catch (e) {
     console.error("Gagal menghapus override rekaman lokal:", e);
   }
@@ -236,10 +264,10 @@ function mergeRecordsWithOverrides(cloudRecords: SLRTRecord[]): SLRTRecord[] {
           if (!mergedRecord.foto_ktp_url) mergedRecord.foto_ktp_url = cloudRec.foto_ktp_url;
         }
 
-        mergedList[existingIndex] = mergedRecord;
+        mergedList[existingIndex] = normalizeRecord(mergedRecord);
       } else {
         // Completely local record
-        mergedList.unshift(overrides[id]);
+        mergedList.unshift(normalizeRecord(overrides[id]));
       }
     });
     return mergedList;
@@ -262,16 +290,17 @@ function normalizeRecord(rec: any): SLRTRecord {
     try {
       let needsSave = false;
       const updatePayload: any = {};
+      const cacheVal = photosArchiveCache[id];
 
-      if (fotoKkKtp && fotoKkKtp.length > 50) {
+      if (fotoKkKtp && fotoKkKtp.length > 150 && (!cacheVal || cacheVal.fotoKkKtp !== fotoKkKtp)) {
         updatePayload.fotoKkKtp = fotoKkKtp;
         needsSave = true;
       }
-      if (fotoDepanRumah && fotoDepanRumah.length > 50) {
+      if (fotoDepanRumah && fotoDepanRumah.length > 150 && (!cacheVal || cacheVal.fotoDepanRumah !== fotoDepanRumah)) {
         updatePayload.fotoDepanRumah = fotoDepanRumah;
         needsSave = true;
       }
-      if (dokumentasiBukti && dokumentasiBukti.length > 50) {
+      if (dokumentasiBukti && dokumentasiBukti.length > 150 && (!cacheVal || cacheVal.dokumentasiBukti !== dokumentasiBukti)) {
         updatePayload.dokumentasiBukti = dokumentasiBukti;
         needsSave = true;
       }
@@ -281,7 +310,6 @@ function normalizeRecord(rec: any): SLRTRecord {
       }
 
       // Restore if empty in current record but available in local photos vault archive cache
-      const cacheVal = photosArchiveCache[id];
       if (cacheVal) {
         if (!fotoKkKtp && cacheVal.fotoKkKtp) {
           fotoKkKtp = cacheVal.fotoKkKtp;
@@ -635,7 +663,11 @@ export default function App() {
                 }
               });
               if (overridesChanged) {
-                localStorage.setItem('slrt_record_overrides', JSON.stringify(overrides));
+                const cleanedOver: any = {};
+                Object.keys(overrides).forEach(k => {
+                  cleanedOver[k] = stripPhotosFromRecord(overrides[k]);
+                });
+                localStorage.setItem('slrt_record_overrides', JSON.stringify(cleanedOver));
               }
             } catch (pruneErr) {
               console.error("Gagal melakukan pemangkasan override:", pruneErr);
@@ -644,7 +676,7 @@ export default function App() {
 
           const merged = mergeRecordsWithOverrides(normalized);
           setRecords(merged);
-          localStorage.setItem('slrt_records', JSON.stringify(merged));
+          localStorage.setItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(merged)));
         }
         if (json.facilitators && Array.isArray(json.facilitators)) {
           const reconciled = getReconciledFacilitators(json.facilitators);
@@ -861,9 +893,9 @@ export default function App() {
   const [copiedRecordId, setCopiedRecordId] = useState<'list' | 'tbl' | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
-  // Auto-save changes to localStorage
+  // Auto-save changes to localStorage (strip photos to keep size ultra micro and prevent QuotaExceededError)
   useEffect(() => {
-    localStorage.setItem('slrt_records', JSON.stringify(records));
+    localStorage.setItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(records)));
   }, [records]);
 
   useEffect(() => {
@@ -964,7 +996,7 @@ export default function App() {
           const normalized = filtered.map(normalizeRecord);
           const merged = mergeRecordsWithOverrides(normalized);
           setRecords(merged);
-          localStorage.setItem('slrt_records', JSON.stringify(merged));
+          localStorage.setItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(merged)));
         }
         const now = new Date();
         setLastCloudSync(now.toLocaleTimeString('id-ID'));
@@ -1797,7 +1829,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     let compiledRecordForSync: SLRTRecord | null = null;
     const updatedRecords = records.map(rec => {
       if (rec.id === selectedVerifierRecord.id) {
-        const updated = {
+        const updated = normalizeRecord({
           ...rec,
           statusKunjungan: 'Sudah Dikunjungi' as const,
           tanggalPemeriksaan: verifierDate.trim() || 'Hari Ini',
@@ -1831,7 +1863,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           foto_depan_rumah: verifierFotoDepanRumah,
           fotodepanrumah: verifierFotoDepanRumah,
           fotoRumah: verifierFotoDepanRumah
-        };
+        });
         compiledRecordForSync = updated;
         return updated;
       }
