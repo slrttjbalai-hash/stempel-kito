@@ -356,6 +356,64 @@ export default function App() {
   const [cloudLoading, setCloudLoading] = useState(false);
   const [lastCloudSync, setLastCloudSync] = useState<string | null>(null);
 
+  // Count local overrides pending cloud synchronization confirmation
+  const unsyncedCount = useMemo(() => {
+    try {
+      const savedOver = localStorage.getItem('slrt_record_overrides');
+      if (!savedOver) return 0;
+      const overrides = JSON.parse(savedOver);
+      return Object.keys(overrides).length;
+    } catch (e) {
+      return 0;
+    }
+  }, [records]);
+
+  // Synchronize all offline changes to Google Sheets
+  const handleSyncAllOfflineChanges = async () => {
+    try {
+      const savedOver = localStorage.getItem('slrt_record_overrides');
+      if (!savedOver) return;
+      const overrides = JSON.parse(savedOver);
+      const keys = Object.keys(overrides);
+      if (keys.length === 0) {
+        alert("Seluruh data Anda telah sepenuhnya tersinkronisasi dengan database awan Google Sheets!");
+        return;
+      }
+      
+      setCloudLoading(true);
+      let success = 0;
+      for (const id of keys) {
+        const rec = overrides[id];
+        try {
+          await fetch(GOOGLE_SHEETS_API_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: {
+              "Content-Type": "text/plain"
+            },
+            body: JSON.stringify({
+              action: 'syncRecord',
+              data: rec
+            })
+          });
+          success++;
+        } catch (e) {
+          console.error("Gagal sinkronisasi data ID:", id, e);
+        }
+      }
+      
+      // Force refresh of initial data from cloud which also prunes matches
+      await refreshFromCloud(false);
+      
+      alert(`✓ Sinkronisasi Berhasil!\nBerhasil mengirimkan ${success} dari ${keys.length} data perubahan lokal langsung ke Google Sheets secara real-time.`);
+    } catch (e) {
+      console.error(e);
+      alert("Gagal melakukan sinkronisasi data luring. Silakan periksa koneksi internet Anda.");
+    } finally {
+      setCloudLoading(false);
+    }
+  };
+
   // Parse User Agent to get friendly device info
   const getDeviceDetails = () => {
     const ua = navigator.userAgent;
@@ -385,6 +443,32 @@ export default function App() {
             return !deletedIds.includes(rec.id) && !rec.isDeleted && rec.isDeleted !== 'true';
           });
           const normalized = filtered.map(normalizeRecord);
+
+          // Clean up local overrides that have successfully integrated/synced to the cloud
+          const savedOver = localStorage.getItem('slrt_record_overrides');
+          if (savedOver) {
+            try {
+              const overrides = JSON.parse(savedOver);
+              let overridesChanged = false;
+              normalized.forEach((cloudRec: any) => {
+                const localRec = overrides[cloudRec.id];
+                if (localRec) {
+                  const matchesStatus = cloudRec.statusKunjungan === localRec.statusKunjungan;
+                  // If the status is processed in cloud, we can safely trust the cloud version now
+                  if (matchesStatus && (cloudRec.tanggalPemeriksaan === localRec.tanggalPemeriksaan || !localRec.tanggalPemeriksaan)) {
+                    delete overrides[cloudRec.id];
+                    overridesChanged = true;
+                  }
+                }
+              });
+              if (overridesChanged) {
+                localStorage.setItem('slrt_record_overrides', JSON.stringify(overrides));
+              }
+            } catch (pruneErr) {
+              console.error("Gagal melakukan pemangkasan override:", pruneErr);
+            }
+          }
+
           const merged = mergeRecordsWithOverrides(normalized);
           setRecords(merged);
           localStorage.setItem('slrt_records', JSON.stringify(merged));
@@ -1463,8 +1547,11 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
   const handleOpenVerifierModal = (rec: SLRTRecord) => {
     setSelectedVerifierRecord(rec);
     setVerifierNotes(rec.catatanPemeriksa || rec.catatan_pendata || '');
-    // Prioritize active logged-in facilitator's name so we link data correctly to their account!
-    setVerifierNamaPendata(session?.name || rec.namaPendata || rec.namaFasilitator || '');
+    
+    // Auto-fill verifier's name with the logged-in user's account name
+    const activeName = session?.name || rec.namaPendata || rec.namaFasilitator || 'Petugas SLRT';
+    setVerifierNamaPendata(activeName);
+    
     setVerifierFotoKkKtp(rec.fotoKkKtp || rec.foto_ktp_url || '');
     setVerifierFotoDepanRumah(rec.fotoDepanRumah || rec.foto_hunian_url || '');
     
@@ -1482,17 +1569,19 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       setVerifierPhoto(pickedPhoto);
     }
 
-    if (rec.tanggalPemeriksaan) {
-      setVerifierDate(rec.tanggalPemeriksaan);
-    } else {
-      const today = new Date();
-      const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-      const months = [
-        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
-        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-      ];
-      setVerifierDate(`${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`);
-    }
+    // Automatically set verification date/time to the EXACT current real-world timestamp
+    const today = new Date();
+    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const months = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    const hrs = String(today.getHours()).padStart(2, '0');
+    const mins = String(today.getMinutes()).padStart(2, '0');
+    const secs = String(today.getSeconds()).padStart(2, '0');
+    const formattedDateTime = `${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()} Pukul ${hrs}:${mins}:${secs} WIB`;
+    
+    setVerifierDate(formattedDateTime);
     setShowVerifierModal(true);
   };
 
@@ -4444,19 +4533,76 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               </div>
             </div>
 
-            {/* Google Sheets Live Sync Integration (Active Web App) */}
-            <div className="border-t border-slate-200 pt-2.5 flex flex-col gap-1.5">
-              <span className="text-[8px] font-black text-slate-450 uppercase tracking-widest">KONEKSI GOOGLE SHEETS LIVE</span>
-              <button
-                onClick={handleBulkSyncToGoogleSheets}
-                disabled={syncingRecordId !== null}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-350 text-white font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-1 text-[10px] transition-all cursor-pointer shadow-xs select-none uppercase tracking-wide"
-              >
-                📊 {syncingRecordId === 'all' ? 'Mensinkronkan...' : 'Ekspor Massal Ke Sheets'}
-              </button>
-              <p className="text-[8px] text-slate-400 leading-normal italic">
-                Sinkronisasi database rujukan SLRT KITO Kota Tanjungbalai langsung ke spreadsheet target.
-              </p>
+            {/* Pusat Sinkronisasi Real-Time (Active Web App) */}
+            <div className="border-t border-slate-200 pt-3 flex flex-col gap-2">
+              <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                🔄 PUSAT SINKRONISASI REAL-TIME
+              </span>
+              
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 flex flex-col gap-1.5 text-[10px]">
+                <div className="flex justify-between items-center text-[9px] font-bold text-slate-650">
+                  <span>Status Koneksi:</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[8px] flex items-center gap-1 uppercase tracking-wider font-mono ${
+                    cloudLoading 
+                      ? 'bg-amber-100 text-amber-850 animate-pulse' 
+                      : 'bg-emerald-50 text-emerald-700 border border-emerald-150 font-bold'
+                  }`}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" />
+                    Terhubung
+                  </span>
+                </div>
+                
+                <div className="flex justify-between items-center text-[9px] font-bold text-slate-650">
+                  <span>Modifikasi Luring:</span>
+                  {unsyncedCount > 0 ? (
+                    <span className="px-1.5 py-0.5 rounded text-[8px] font-mono bg-amber-500 text-white font-black animate-bounce">
+                      {unsyncedCount} Kiriman Luring
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded text-[8px] font-mono bg-slate-100 text-slate-400 font-medium">
+                      Sudah Sinkron
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-[8px] text-slate-400 leading-normal italic">
+                  Data kunjungan disinkronisasikan multi-perangkat secara otomatis setiap <b className="text-slate-600 font-mono">12 detik</b> antara akun Admin Dinsos dan Fasilitator Lapangan.
+                </div>
+              </div>
+
+              {unsyncedCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={handleSyncAllOfflineChanges}
+                  disabled={cloudLoading}
+                  className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-slate-350 text-white font-black py-2.5 px-3 rounded-lg flex items-center justify-center gap-1.5 text-[10px] transition-all cursor-pointer shadow-md select-none uppercase tracking-wider active:scale-[0.98]"
+                  title="Klik untuk menyinkronisasikan perubahan data luring Anda langsung ke Google Sheets"
+                >
+                  🚀 Sinkronkan {unsyncedCount} Data Sekarang
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => refreshFromCloud(true)}
+                  disabled={cloudLoading}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-350 text-white font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-1.5 text-[10px] transition-all cursor-pointer shadow-xs select-none uppercase tracking-wider"
+                  title="Klik untuk memaksa tarik data terbaru dari Google Sheets sekarang"
+                >
+                  📡 {cloudLoading ? 'Menyinkronkan...' : 'Refresh Tarik Cloud'}
+                </button>
+              )}
+
+              {userRole === 'admin' && (
+                <button
+                  type="button"
+                  onClick={handleBulkSyncToGoogleSheets}
+                  disabled={syncingRecordId !== null}
+                  className="w-full bg-slate-800 hover:bg-slate-900 border border-slate-700 disabled:bg-slate-350 text-white font-extrabold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 text-[9px] transition-all cursor-pointer shadow-xs select-none uppercase tracking-wide mt-1"
+                  title="Khusus Admin: Ekspor seluruh data rujukan lokal untuk ditulis secara massal ke Google Sheets"
+                >
+                  📊 {syncingRecordId === 'all' ? 'Ekspor Massal...' : 'Ekspor Massal Central Ke Sheets'}
+                </button>
+              )}
             </div>
 
             <input 
