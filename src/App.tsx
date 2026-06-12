@@ -42,6 +42,13 @@ import SmartParserTab from './components/SmartParserTab';
 import HelpTab from './components/HelpTab';
 import DashboardSummary from './components/DashboardSummary';
 import * as XLSX from 'xlsx';
+import { 
+  photosArchiveCache, 
+  loadPhotosToCache, 
+  saveToArchive, 
+  cleanUpArchive, 
+  migrateLocalStorageToIndexedDB 
+} from './photoStorage';
 
 function parseMonthAndYear(dateStr: string) {
   if (!dateStr) return null;
@@ -253,39 +260,41 @@ function normalizeRecord(rec: any): SLRTRecord {
 
   if (id) {
     try {
-      const archiveStr = localStorage.getItem('slrt_local_photos_archive') || '{}';
-      const archive = JSON.parse(archiveStr);
-      let archiveChanged = false;
+      let needsSave = false;
+      const updatePayload: any = {};
 
       if (fotoKkKtp && fotoKkKtp.length > 50) {
-        archive[id] = { ...(archive[id] || {}), fotoKkKtp };
-        archiveChanged = true;
+        updatePayload.fotoKkKtp = fotoKkKtp;
+        needsSave = true;
       }
       if (fotoDepanRumah && fotoDepanRumah.length > 50) {
-        archive[id] = { ...(archive[id] || {}), fotoDepanRumah };
-        archiveChanged = true;
+        updatePayload.fotoDepanRumah = fotoDepanRumah;
+        needsSave = true;
       }
       if (dokumentasiBukti && dokumentasiBukti.length > 50) {
-        archive[id] = { ...(archive[id] || {}), dokumentasiBukti };
-        archiveChanged = true;
+        updatePayload.dokumentasiBukti = dokumentasiBukti;
+        needsSave = true;
       }
 
-      if (archiveChanged) {
-        localStorage.setItem('slrt_local_photos_archive', JSON.stringify(archive));
+      if (needsSave) {
+        saveToArchive(id, updatePayload);
       }
 
-      // Restore if empty in current record but available in local photos vault archive
-      if (!fotoKkKtp && archive[id]?.fotoKkKtp) {
-        fotoKkKtp = archive[id].fotoKkKtp;
-      }
-      if (!fotoDepanRumah && archive[id]?.fotoDepanRumah) {
-        fotoDepanRumah = archive[id].fotoDepanRumah;
-      }
-      if (!dokumentasiBukti && archive[id]?.dokumentasiBukti) {
-        dokumentasiBukti = archive[id].dokumentasiBukti;
+      // Restore if empty in current record but available in local photos vault archive cache
+      const cacheVal = photosArchiveCache[id];
+      if (cacheVal) {
+        if (!fotoKkKtp && cacheVal.fotoKkKtp) {
+          fotoKkKtp = cacheVal.fotoKkKtp;
+        }
+        if (!fotoDepanRumah && cacheVal.fotoDepanRumah) {
+          fotoDepanRumah = cacheVal.fotoDepanRumah;
+        }
+        if (!dokumentasiBukti && cacheVal.dokumentasiBukti) {
+          dokumentasiBukti = cacheVal.dokumentasiBukti;
+        }
       }
     } catch (e) {
-      console.error("Gagal sinkronisasi arsip foto lokal:", e);
+      console.error("Gagal sinkronisasi arsip foto lokal (IndexedDB Cache):", e);
     }
   }
 
@@ -307,6 +316,108 @@ function normalizeRecord(rec: any): SLRTRecord {
     catatanPemeriksa,
     namaPendata
   };
+}
+
+// Map CSV header variants to SLRTRecord keys
+const CSV_HEADER_MAP: Record<string, keyof SLRTRecord> = {
+  'id dokumen': 'id',
+  'id': 'id',
+  'nama klien / penerima': 'namaKlien',
+  'nama klien': 'namaKlien',
+  'nama': 'namaKlien',
+  'kecamatan': 'kecamatan',
+  'kelurahan': 'kelurahan',
+  'alamat lengkap klien': 'alamatKlien',
+  'alamat lengkap': 'alamatKlien',
+  'alamat': 'alamatKlien',
+  'no telepon / wa': 'noTelpon',
+  'no telpon / wa': 'noTelpon',
+  'no telepon': 'noTelpon',
+  'no telpon': 'noTelpon',
+  'kelengkapan berkas kependudukan': 'dokumen',
+  'kelengkapan berkas': 'dokumen',
+  'dokumen': 'dokumen',
+  'status kesejahteraan (dtks)': 'status',
+  'status dtks': 'status',
+  'status kesejahteraan': 'status',
+  'status': 'status',
+  'estimasi penghasilan bulanan': 'pendapatanPerbulan',
+  'pendapatan perbulan': 'pendapatanPerbulan',
+  'pendapatan': 'pendapatanPerbulan',
+  'status kepemilikan rumah': 'statusRumah',
+  'status rumah': 'statusRumah',
+  'sumber penerangan utama': 'jenisPenerangan',
+  'sumber penerangan': 'jenisPenerangan',
+  'jenis penerangan': 'jenisPenerangan',
+  'penerangan': 'jenisPenerangan',
+  'kondisi fasilitas sanitasi mck': 'mck',
+  'kondisi mck': 'mck',
+  'fasilitas mck': 'mck',
+  'mck': 'mck',
+  'bantuan sosial diterima': 'bantuanDiterima',
+  'bantuan diterima': 'bantuanDiterima',
+  'bantuan sosial': 'bantuanDiterima',
+  'bantuan': 'bantuanDiterima',
+  'masalah / deskripsi kasus': 'jenisPengaduan',
+  'masalah': 'jenisPengaduan',
+  'deskripsi kasus': 'jenisPengaduan',
+  'jenis pengaduan': 'jenisPengaduan',
+  'jenis layanan rujukan': 'jenisLayanan',
+  'jenis layanan': 'jenisLayanan',
+  'layanan': 'jenisLayanan',
+  'sumber input awal': 'diinputOleh',
+  'sumber input': 'diinputOleh',
+  'diinput oleh': 'diinputOleh',
+  'diinputoleh': 'diinputOleh',
+  'tanggal input / registrasi': 'hariTanggal',
+  'tanggal input': 'hariTanggal',
+  'tanggal registrasi': 'hariTanggal',
+  'haritanggal': 'hariTanggal',
+  'hari tanggal': 'hariTanggal',
+  'fasilitator lapangan': 'namaFasilitator',
+  'nama fasilitator': 'namaFasilitator',
+  'nama pendata': 'namaPendata',
+  'namapendata': 'namaPendata',
+  'tanggal verifikasi lapangan (audit)': 'tanggalPemeriksaan',
+  'tanggal verifikasi': 'tanggalPemeriksaan',
+  'tanggalpemeriksaan': 'tanggalPemeriksaan',
+  'catatan petugas lapangan (verifikasi)': 'catatanPemeriksa',
+  'catatan pemeriksa': 'catatanPemeriksa',
+  'catatandata': 'catatanPemeriksa',
+  'status verifikasi kunjungan': 'statusKunjungan',
+  'status kunjungan': 'statusKunjungan',
+  'statuskunjungan': 'statusKunjungan',
+  'foto kk / ktp': 'fotoKkKtp',
+  'foto kk': 'fotoKkKtp',
+  'foto depan rumah': 'fotoDepanRumah',
+  'foto depan': 'fotoDepanRumah',
+  'dokumentasi bukti': 'dokumentasiBukti',
+  'bukti': 'dokumentasiBukti'
+};
+
+// Help parse a CSV line considering double quoted sub-segments containing commas
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++; // skip next quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result;
 }
 
 export default function App() {
@@ -353,13 +464,25 @@ export default function App() {
   // Registered Field Facilitators state
   const [facilitators, setFacilitators] = useState<FacilitatorUser[]>(() => {
     const saved = localStorage.getItem('slrt_facilitators');
-    const fList = saved ? JSON.parse(saved) : INITIAL_FACILITATORS;
+    let fList = saved ? JSON.parse(saved) : INITIAL_FACILITATORS;
+    
+    // Filter out deleted facilitators
+    try {
+      const deletedFasString = localStorage.getItem('slrt_deleted_facilitator_ids') || '[]';
+      const deletedFasIds = JSON.parse(deletedFasString);
+      if (Array.isArray(deletedFasIds) && deletedFasIds.length > 0) {
+        fList = fList.filter((f: any) => f && !deletedFasIds.includes(f.id));
+      }
+    } catch (e) {
+      console.error("Gagal menyaring petugas lapangan yang dihapus:", e);
+    }
+
     const savedOverrides = localStorage.getItem('slrt_status_overrides');
     if (savedOverrides) {
       try {
         const overrides = JSON.parse(savedOverrides);
         return fList.map((f: any) => {
-          if (overrides[f.id]) {
+          if (f && overrides[f.id]) {
             return { ...f, status: overrides[f.id] };
           }
           return f;
@@ -371,23 +494,34 @@ export default function App() {
     return fList;
   });
 
-  const GOOGLE_SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbzc8KJD9x28VETuAGz3y7-u6R-BEQ2aJTeRtonHUAP1CG_-7v1TBOtoR73yTB1XcjhyvQ/exec";
+  const GOOGLE_SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbzvANvDUP6rS1NSJ6lgpGOaIRy3UAzCGOIsZMYh4sbiutpq2cnn92HNkZiGebdqCFbEcQ/exec";
 
   // Reconcile list of facilitators with administrative status overrides
   const getReconciledFacilitators = (rawFacs: FacilitatorUser[]): FacilitatorUser[] => {
+    let filteredFacs = rawFacs;
+    try {
+      const deletedFasString = localStorage.getItem('slrt_deleted_facilitator_ids') || '[]';
+      const deletedFasIds = JSON.parse(deletedFasString);
+      if (Array.isArray(deletedFasIds) && deletedFasIds.length > 0) {
+        filteredFacs = rawFacs.filter(f => f && !deletedFasIds.includes(f.id));
+      }
+    } catch (e) {
+      console.error("Gagal menyaring petugas lapangan yang dihapus:", e);
+    }
+
     const savedOverrides = localStorage.getItem('slrt_status_overrides');
-    if (!savedOverrides) return rawFacs;
+    if (!savedOverrides) return filteredFacs;
     try {
       const overrides = JSON.parse(savedOverrides);
-      return rawFacs.map(f => {
-        if (overrides[f.id]) {
+      return filteredFacs.map(f => {
+        if (f && overrides[f.id]) {
           return { ...f, status: overrides[f.id] };
         }
         return f;
       });
     } catch (e) {
       console.error("Gagal merekonsoliasi status kustom:", e);
-      return rawFacs;
+      return filteredFacs;
     }
   };
 
@@ -539,7 +673,24 @@ export default function App() {
 
   // Synchronize on startup and pull changes periodically
   useEffect(() => {
-    refreshFromCloud(false);
+    async function initializeOfflineCache() {
+      // 1. Run backward-compatible migration from LocalStorage to IndexedDB
+      await migrateLocalStorageToIndexedDB();
+      
+      // 1b. Run periodic cleanup on IndexedDB to prune photo assets older than 45 days
+      await cleanUpArchive(45);
+      
+      // 2. Load all high-res photos from IndexedDB into synchronous in-memory cache
+      await loadPhotosToCache();
+      
+      // 3. Immediately normalize and refresh local records to reflect restored photographs
+      setRecords(prev => prev.map(normalizeRecord));
+      
+      // 4. Trigger cloud synchronization as normal
+      refreshFromCloud(false);
+    }
+    
+    initializeOfflineCache();
 
     // Auto-update every 12 seconds to ensure registrations and records are in near-real-time sync across devices
     const syncInterval = setInterval(() => {
@@ -616,10 +767,12 @@ export default function App() {
 
   // Link and auto-filter display based on the currently logged-in facilitator account name
   useEffect(() => {
-    if (userRole === 'facilitator' && session?.role === 'facilitator' && session?.name) {
-      setSelectedFacilitatorFilter(session.name);
-    } else {
-      setSelectedFacilitatorFilter('all');
+    // Default to 'all' to allow all facilitators to view and verify any item in the queue list (as requested)
+    setSelectedFacilitatorFilter('all');
+    
+    // Auto-fill formFasilitator with the logged-in facilitator's/officer's name
+    if (session?.name) {
+      setFormFasilitator(session.name);
     }
   }, [userRole, session]);
   const [visiblePasswords, setVisiblePasswords] = useState<{[key: string]: boolean}>({});
@@ -1019,6 +1172,18 @@ export default function App() {
   // 5. Admin Action: Delete Facilitator Account with Google Sheets update
   const handleDeleteFacilitator = async (id: string) => {
     if (window.confirm("Apakah Anda yakin ingin menghapus akun Fasilitator ini dari sistem?")) {
+      // Save to local deleted facilitator list to prevent cloud sync restoring it
+      try {
+        const deletedFasString = localStorage.getItem('slrt_deleted_facilitator_ids') || '[]';
+        const deletedFasIds = JSON.parse(deletedFasString);
+        if (!deletedFasIds.includes(id)) {
+          deletedFasIds.push(id);
+          localStorage.setItem('slrt_deleted_facilitator_ids', JSON.stringify(deletedFasIds));
+        }
+      } catch (e) {
+        console.error("Gagal menyimpan ID fasilitator terhapus:", e);
+      }
+
       // Purge any local status override for this deleted accounts
       try {
         const savedOverrides = localStorage.getItem('slrt_status_overrides');
@@ -1311,7 +1476,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
   // Reset form
   const resetForm = () => {
     setEditingId(null);
-    setFormFasilitator('');
+    setFormFasilitator(session?.name || '');
     setFormHariTanggal('');
     setFormNamaKlien('');
     setFormPekerjaanKrt('');
@@ -1587,8 +1752,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setSelectedVerifierRecord(rec);
     setVerifierNotes(rec.catatanPemeriksa || rec.catatan_pendata || '');
     
-    // Auto-fill verifier's name with the logged-in user's account name
-    const activeName = session?.name || rec.namaPendata || rec.namaFasilitator || 'Petugas SLRT';
+    // Auto-fill verifier's name automatically with the logged-in user's account name
+    const activeName = session?.name || 'Petugas SLRT';
     setVerifierNamaPendata(activeName);
     
     setVerifierFotoKkKtp(rec.fotoKkKtp || rec.foto_ktp_url || '');
@@ -2136,6 +2301,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
   // Input Import
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const csvFileInputRef = useRef<HTMLInputElement>(null);
+
   const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileReader = new FileReader();
     if (e.target.files && e.target.files[0]) {
@@ -2162,6 +2329,92 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           }
         } catch (err) {
           alert("Gagal membaca file JSON.");
+        }
+      };
+    }
+  };
+
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileReader = new FileReader();
+    if (e.target.files && e.target.files[0]) {
+      fileReader.readAsText(e.target.files[0], "UTF-8");
+      fileReader.onload = (event) => {
+        try {
+          if (event.target?.result) {
+            const text = event.target.result as string;
+            const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+            if (lines.length < 2) {
+              alert("Berkas CSV kosongan atau tidak memiliki baris data.");
+              return;
+            }
+
+            const rawHeaders = parseCSVLine(lines[0]);
+            const headerIndices: { key: keyof SLRTRecord; index: number }[] = [];
+
+            rawHeaders.forEach((h, idx) => {
+              const cleanH = h.toLowerCase().trim().replace(/["]/g, '');
+              const mappedKey = CSV_HEADER_MAP[cleanH] || CSV_HEADER_MAP[cleanH.replace(/_/, ' ')];
+              if (mappedKey) {
+                headerIndices.push({ key: mappedKey, index: idx });
+              }
+            });
+
+            if (headerIndices.length === 0) {
+              alert("Gagal mengidentifikasi kolom data di baris header CSV. Pastikan tajuk kolom sesuai format resmi.");
+              return;
+            }
+
+            const parsedRecords: SLRTRecord[] = [];
+            for (let i = 1; i < lines.length; i++) {
+              const columns = parseCSVLine(lines[i]);
+              if (columns.length === 0 || (columns.length === 1 && columns[0] === '')) continue;
+              
+              const rec: Partial<SLRTRecord> = {};
+              headerIndices.forEach(({ key, index }) => {
+                if (index < columns.length) {
+                  let val: any = columns[index].trim();
+                  if (key === 'isHighPriority') {
+                    val = val === 'true' || val === '1' || val === 'Ya' || val === 'true';
+                  }
+                  (rec as any)[key] = val;
+                }
+              });
+
+              if (!rec.id) {
+                rec.id = `rec-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+              }
+              if (!rec.namaKlien) {
+                continue;
+              }
+              rec.namaFasilitator = rec.namaFasilitator || 'Petugas SLRT';
+              rec.kecamatan = rec.kecamatan || 'Tanjungbalai Selatan';
+              rec.kelurahan = rec.kelurahan || 'Indra Sakti';
+              rec.hariTanggal = rec.hariTanggal || new Date().toLocaleDateString('id-ID');
+              rec.statusKunjungan = (rec.statusKunjungan as any) || 'Belum Dikunjungi';
+
+              parsedRecords.push(rec as SLRTRecord);
+            }
+
+            if (parsedRecords.length === 0) {
+              alert("Tidak ada data valid yang dapat diimpor dari file CSV.");
+              return;
+            }
+
+            const proceed = window.confirm(`Apakah Anda yakin ingin mengimpor ${parsedRecords.length} data rujukan SLRT dari berkas CSV ini?`);
+            if (proceed) {
+              setRecords(prev => {
+                const merged = [...parsedRecords, ...prev];
+                const unique = merged.filter((item, index, self) => 
+                  index === self.findIndex((t) => t.id === item.id)
+                );
+                return unique;
+              });
+              alert(`Berhasil mengimpor ${parsedRecords.length} data rujukan SLRT dari CSV!`);
+            }
+          }
+        } catch (err) {
+          console.error(err);
+          alert("Gagal memproses berkas CSV.");
         }
       };
     }
@@ -4486,9 +4739,20 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                             </p>
                           </div>
                           
-                          <div className="flex flex-col items-end gap-1 shrink-0">
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
                             <span className="text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase bg-emerald-50 text-emerald-800 border border-emerald-250 font-mono tracking-tight shrink-0 whitespace-nowrap">
                               {rec.kelurahan}
+                            </span>
+                            
+                            <span className={`text-[7.5px] font-black px-1.5 py-0.5 rounded-full uppercase border tracking-wide whitespace-nowrap shrink-0 flex items-center gap-1 ${
+                              rec.statusKunjungan === 'Sudah Dikunjungi'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                            }`}>
+                              <span className={`w-1 h-1 rounded-full ${
+                                rec.statusKunjungan === 'Sudah Dikunjungi' ? 'bg-emerald-600' : 'bg-amber-500 animate-pulse'
+                              }`}></span>
+                              {rec.statusKunjungan === 'Sudah Dikunjungi' ? 'Sudah Dikunjungi' : 'Belum Dikunjungi'}
                             </span>
                             
                             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -4579,18 +4843,27 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
             <div className="border-t border-slate-200 pt-2.5">
               <span className="text-[8px] font-black text-slate-450 uppercase tracking-widest block mb-1.5">Backup JSON &amp; Impor Database</span>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-1">
                 <button 
                   onClick={handleExportJSON}
-                  className="bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 py-1.5 px-1 text-[9px] font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all text-slate-700 hover:text-indigo-700"
+                  className="bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 py-1.5 px-0.5 text-[8px] font-bold rounded-lg flex items-center justify-center gap-0.5 cursor-pointer transition-all text-slate-700 hover:text-indigo-700 font-sans"
+                  title="Ekspor seluruh data ke format JSON"
                 >
-                  <Download className="w-3 h-3 text-slate-400" /> Ekspor JSON
+                  <Download className="w-3 h-3 text-slate-400 shrink-0" /> Ekspor JSON
                 </button>
                 <button 
                   onClick={() => fileInputRef.current?.click()}
-                  className="bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 py-1.5 px-1 text-[9px] font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all text-slate-700 hover:text-indigo-700"
+                  className="bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 py-1.5 px-0.5 text-[8px] font-bold rounded-lg flex items-center justify-center gap-0.5 cursor-pointer transition-all text-slate-700 hover:text-indigo-700 font-sans"
+                  title="Impor pangkalan data dari berkas JSON"
                 >
-                  <Upload className="w-3 h-3 text-slate-400" /> Impor JSON
+                  <Upload className="w-3 h-3 text-slate-400 shrink-0" /> Impor JSON
+                </button>
+                <button 
+                  onClick={() => csvFileInputRef.current?.click()}
+                  className="bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 py-1.5 px-0.5 text-[8px] font-bold rounded-lg flex items-center justify-center gap-0.5 cursor-pointer transition-all text-slate-700 hover:text-emerald-700 font-sans"
+                  title="Impor records rujukan SLRT dari berkas CSV"
+                >
+                  <FileSpreadsheet className="w-3 h-3 text-emerald-500 shrink-0" /> Impor CSV
                 </button>
               </div>
             </div>
@@ -4672,6 +4945,13 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               ref={fileInputRef} 
               onChange={handleImportJSON} 
               accept=".json" 
+              className="hidden" 
+            />
+            <input 
+              type="file" 
+              ref={csvFileInputRef} 
+              onChange={handleImportCSV} 
+              accept=".csv" 
               className="hidden" 
             />
             <button 
