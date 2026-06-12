@@ -245,12 +245,51 @@ function mergeRecordsWithOverrides(cloudRecords: SLRTRecord[]): SLRTRecord[] {
 // Helper to normalize record properties from various possible client/cloud variations
 function normalizeRecord(rec: any): SLRTRecord {
   if (!rec) return rec;
+  const id = rec.id || '';
+
+  let fotoKkKtp = rec.fotoKkKtp || rec.foto_ktp_url || rec.foto_kk_ktp || rec.fotokkktp || rec.fotoKk || rec.fotoKtp || '';
+  let fotoDepanRumah = rec.fotoDepanRumah || rec.foto_hunian_url || rec.foto_depan_rumah || rec.fotodepanrumah || rec.fotoRumah || '';
+  let dokumentasiBukti = rec.dokumentasiBukti || rec.dokumentasibukti || rec.dokumentasi_bukti || rec.dokumentasi || rec.fotoOps || rec.foto_ops || rec.foto_ops_url || '';
+
+  if (id) {
+    try {
+      const archiveStr = localStorage.getItem('slrt_local_photos_archive') || '{}';
+      const archive = JSON.parse(archiveStr);
+      let archiveChanged = false;
+
+      if (fotoKkKtp && fotoKkKtp.length > 50) {
+        archive[id] = { ...(archive[id] || {}), fotoKkKtp };
+        archiveChanged = true;
+      }
+      if (fotoDepanRumah && fotoDepanRumah.length > 50) {
+        archive[id] = { ...(archive[id] || {}), fotoDepanRumah };
+        archiveChanged = true;
+      }
+      if (dokumentasiBukti && dokumentasiBukti.length > 50) {
+        archive[id] = { ...(archive[id] || {}), dokumentasiBukti };
+        archiveChanged = true;
+      }
+
+      if (archiveChanged) {
+        localStorage.setItem('slrt_local_photos_archive', JSON.stringify(archive));
+      }
+
+      // Restore if empty in current record but available in local photos vault archive
+      if (!fotoKkKtp && archive[id]?.fotoKkKtp) {
+        fotoKkKtp = archive[id].fotoKkKtp;
+      }
+      if (!fotoDepanRumah && archive[id]?.fotoDepanRumah) {
+        fotoDepanRumah = archive[id].fotoDepanRumah;
+      }
+      if (!dokumentasiBukti && archive[id]?.dokumentasiBukti) {
+        dokumentasiBukti = archive[id].dokumentasiBukti;
+      }
+    } catch (e) {
+      console.error("Gagal sinkronisasi arsip foto lokal:", e);
+    }
+  }
+
   const statusKunjungan = rec.statusKunjungan || rec.status_kunjungan || rec.statuskunjungan || 'Belum Dikunjungi';
-  
-  const fotoKkKtp = rec.fotoKkKtp || rec.foto_ktp_url || rec.foto_kk_ktp || rec.fotokkktp || rec.fotoKk || rec.fotoKtp || '';
-  const fotoDepanRumah = rec.fotoDepanRumah || rec.foto_hunian_url || rec.foto_depan_rumah || rec.fotodepanrumah || rec.fotoRumah || '';
-  const dokumentasiBukti = rec.dokumentasiBukti || rec.dokumentasibukti || rec.dokumentasi_bukti || rec.dokumentasi || rec.fotoOps || rec.foto_ops || rec.foto_ops_url || '';
-  
   const tanggalPemeriksaan = rec.tanggalPemeriksaan || rec.tanggal_pemeriksaan || rec.tanggalpemeriksaan || '';
   const catatanPemeriksa = rec.catatanPemeriksa || rec.catatan_pendata || rec.catatan_pemeriksa || rec.catatanpemeriksa || '';
   const namaPendata = rec.namaPendata || rec.nama_pendata || rec.namapendata || '';
@@ -3384,13 +3423,36 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
                       <div>
                         <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">12. Bantuan Sudah Diperoleh</label>
-                        <input
-                          type="text"
-                          placeholder="Contoh: PKH, BPNT, KIS, atau Belum Ada..."
-                          value={wargaAddBantuanDiterima}
-                          onChange={(e) => setWargaAddBantuanDiterima(e.target.value)}
-                          className="w-full bg-white border border-slate-200 text-xs px-3 py-2.5 rounded-xl outline-none focus:border-amber-600 text-slate-805"
-                        />
+                        <div className="flex flex-col gap-2">
+                          <select
+                            value={['Belum Ada', 'PKH', 'Sembako', 'PBI'].includes(wargaAddBantuanDiterima) ? wargaAddBantuanDiterima : 'Lainnya'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val !== 'Lainnya') {
+                                setWargaAddBantuanDiterima(val);
+                              } else {
+                                setWargaAddBantuanDiterima('');
+                              }
+                            }}
+                            className="w-full bg-white border border-slate-200 text-xs px-3 py-2.5 rounded-xl outline-none focus:border-amber-600 text-slate-805"
+                          >
+                            <option value="Belum Ada">❌ Belum Ada</option>
+                            <option value="PKH">💰 PKH (Program Keluarga Harapan)</option>
+                            <option value="Sembako">🌾 Sembako / BPNT</option>
+                            <option value="PBI">🏥 PBI (Penerima Bantuan Iuran / KIS)</option>
+                            <option value="Lainnya">✍️ Lainnya (Tulis Manual...)</option>
+                          </select>
+                          
+                          {!['Belum Ada', 'PKH', 'Sembako', 'PBI'].includes(wargaAddBantuanDiterima) && (
+                            <input
+                              type="text"
+                              placeholder="Tulis jenis bantuan yang diperoleh di sini..."
+                              value={wargaAddBantuanDiterima}
+                              onChange={(e) => setWargaAddBantuanDiterima(e.target.value)}
+                              className="w-full bg-white border border-amber-200 text-xs px-3 py-2.5 rounded-xl outline-none focus:border-amber-600 text-slate-805"
+                            />
+                          )}
+                        </div>
                       </div>
 
                       <div>
@@ -4863,13 +4925,36 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
                     <div>
                       <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">12. Bantuan Sudah Diperoleh</label>
-                      <input
-                        type="text"
-                        placeholder="Contoh: PKH, BPNT, KIS, atau Belum Ada..."
-                        value={formBantuanDiterima}
-                        onChange={(e) => setFormBantuanDiterima(e.target.value)}
-                        className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-lg outline-none focus:border-indigo-500 text-slate-800"
-                      />
+                      <div className="flex flex-col gap-2">
+                        <select
+                          value={['Belum Ada', 'PKH', 'Sembako', 'PBI'].includes(formBantuanDiterima) ? formBantuanDiterima : 'Lainnya'}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val !== 'Lainnya') {
+                              setFormBantuanDiterima(val);
+                            } else {
+                              setFormBantuanDiterima('');
+                            }
+                          }}
+                          className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-lg outline-none focus:border-indigo-500 text-slate-800"
+                        >
+                          <option value="Belum Ada">❌ Belum Ada</option>
+                          <option value="PKH">💰 PKH (Program Keluarga Harapan)</option>
+                          <option value="Sembako">🌾 Sembako / BPNT</option>
+                          <option value="PBI">🏥 PBI (Penerima Bantuan Iuran / KIS)</option>
+                          <option value="Lainnya">✍️ Lainnya (Tulis Manual...)</option>
+                        </select>
+                        
+                        {!['Belum Ada', 'PKH', 'Sembako', 'PBI'].includes(formBantuanDiterima) && (
+                          <input
+                            type="text"
+                            placeholder="Tulis jenis bantuan yang diperoleh di sini..."
+                            value={formBantuanDiterima}
+                            onChange={(e) => setFormBantuanDiterima(e.target.value)}
+                            className="w-full bg-white border border-indigo-200 text-xs px-3 py-2 rounded-lg outline-none focus:border-indigo-500 text-slate-800"
+                          />
+                        )}
+                      </div>
                     </div>
 
                     <div>
