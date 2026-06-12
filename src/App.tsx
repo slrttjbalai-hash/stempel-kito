@@ -1219,12 +1219,15 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     if (videoRef.current && onPhotoCapture) {
       const video = videoRef.current;
       const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      // Set compact resolution directly at photo click to eliminate mobile device frame pacing bugs/heaviness!
+      const targetW = 320;
+      const targetH = video.videoWidth ? Math.round((video.videoHeight / video.videoWidth) * targetW) : 240;
+      canvas.width = targetW;
+      canvas.height = targetH;
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
         
         // Stop stream and close modal
         stopLiveCamera();
@@ -1246,10 +1249,10 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     img.crossOrigin = "anonymous";
     img.src = imageUrl;
     img.onload = async () => {
-      // Limit dimension sizes to keep canvas operations fast and lightweight
+      // Limit dimension sizes to keep canvas operations lightweight and perfectly syncable via Google Sheets cell character limits (<50,000 characters)
       let width = img.width;
       let height = img.height;
-      const maxDimension = 1000;
+      const maxDimension = 320; // Maximum dimension of 320px keeps Base64 string well under 40,000 chars
       if (width > maxDimension || height > maxDimension) {
         if (width > height) {
           height = Math.round((height * maxDimension) / width);
@@ -1273,57 +1276,62 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         const geo = await getGeotagCoordinates();
 
         // Translucent dark slate overlay background for clear telemetry contrast text representation
-        const labelBarHeight = Math.round(height * 0.18);
+        const labelBarHeight = Math.round(height * 0.22);
         ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
         ctx.fillRect(0, height - labelBarHeight, width, labelBarHeight);
 
         // Emerald horizontal accent brand line
         ctx.fillStyle = '#059669';
-        ctx.fillRect(0, height - labelBarHeight, width, Math.max(3, Math.round(height * 0.006)));
+        ctx.fillRect(0, height - labelBarHeight, width, Math.max(2, Math.round(height * 0.008)));
 
         // Write information text inside overlay
-        const fontSize = Math.max(10, Math.round(width * 0.024));
+        const fontSize = Math.max(7, Math.round(width * 0.026));
         ctx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
         ctx.fillStyle = '#ffffff';
 
         const paddingLeft = Math.round(width * 0.04);
         let textY = height - labelBarHeight + Math.round(labelBarHeight * 0.32);
 
-        ctx.fillText(`📍 GPS GEOTAGGED: Lat ${geo.latitude}, Lon ${geo.longitude}`, paddingLeft, textY);
+        ctx.fillText(`📍 GPS: Lat ${geo.latitude}, Lon ${geo.longitude}`, paddingLeft, textY);
 
         textY += Math.round(labelBarHeight * 0.26);
-        ctx.font = `${fontSize - 2}px "Inter", sans-serif`;
+        ctx.font = `${fontSize - 1}px "Inter", sans-serif`;
         ctx.fillStyle = '#f1f5f9';
         ctx.fillText(`📅 WAKTU: ${geo.timestamp}`, paddingLeft, textY);
 
         textY += Math.round(labelBarHeight * 0.26);
-        ctx.font = `italic ${fontSize - 3}px sans-serif`;
+        ctx.font = `italic ${fontSize - 1.5}px sans-serif`;
         ctx.fillStyle = '#34d399';
-        ctx.fillText(`🏷️ LOKASI: ${geo.address}`, paddingLeft, textY);
+        
+        let displayAddr = geo.address;
+        if (displayAddr.length > 50) {
+          displayAddr = displayAddr.substring(0, 47) + '...';
+        }
+        ctx.fillText(`🏷️ LOKASI: ${displayAddr}`, paddingLeft, textY);
       }
 
-      // Progressively compress JPG until base64 payload is fully under 300KB
-      let quality = 0.90;
+      // Progressively compress JPG until base64 payload is fully under 32KB
+      let quality = 0.75;
       let compressedUrl = canvas.toDataURL('image/jpeg', quality);
       let calculatedPayloadKb = (compressedUrl.length * 0.75) / 1024;
 
       let cycles = 0;
-      while (calculatedPayloadKb > 300 && quality > 0.1 && cycles < 10) {
-        quality -= 0.12;
+      while (calculatedPayloadKb > 32 && quality > 0.1 && cycles < 10) {
+        quality -= 0.10;
         compressedUrl = canvas.toDataURL('image/jpeg', quality);
         calculatedPayloadKb = (compressedUrl.length * 0.75) / 1024;
         cycles++;
       }
 
-      // If still exceeding 300KB scale down the resolution of image
-      if (calculatedPayloadKb > 300) {
+      // If still exceeding 32KB scale down the resolution of image
+      if (calculatedPayloadKb > 32) {
         const shrinkCanvas = document.createElement('canvas');
-        shrinkCanvas.width = Math.round(width * 0.7);
-        shrinkCanvas.height = Math.round(height * 0.7);
+        shrinkCanvas.width = Math.round(width * 0.8);
+        shrinkCanvas.height = Math.round(height * 0.8);
         const shrinkCtx = shrinkCanvas.getContext('2d');
         if (shrinkCtx) {
           shrinkCtx.drawImage(canvas, 0, 0, shrinkCanvas.width, shrinkCanvas.height);
-          compressedUrl = shrinkCanvas.toDataURL('image/jpeg', 0.5);
+          compressedUrl = shrinkCanvas.toDataURL('image/jpeg', 0.4);
         }
       }
 
@@ -1331,7 +1339,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     };
   };
 
-  // Convert uploaded regular image to compressed base64 format under 300KB
+  // Convert uploaded regular image to compressed base64 format under 32KB
   const handleImageUploadHelper = (file: File, callback: (result: string) => void) => {
     const reader = new FileReader();
     reader.onloadend = () => {
