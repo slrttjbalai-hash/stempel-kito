@@ -191,11 +191,44 @@ function mergeRecordsWithOverrides(cloudRecords: SLRTRecord[]): SLRTRecord[] {
       }
       const existingIndex = mergedList.findIndex(r => r.id === id);
       if (existingIndex !== -1) {
-        // Merge local overrides (has precedence)
-        mergedList[existingIndex] = {
-          ...mergedList[existingIndex],
-          ...overrides[id]
+        const cloudRec = mergedList[existingIndex];
+        const localRec = overrides[id];
+        
+        // Cloud is source of truth for ground-truth verification!
+        // If the cloud is marked as inspected/visited ('Sudah Dikunjungi'),
+        // we must NOT downgrade it to 'Belum Dikunjungi' via a stale local override.
+        const cloudIsVisited = cloudRec.statusKunjungan === 'Sudah Dikunjungi';
+        const localIsVisited = localRec.statusKunjungan === 'Sudah Dikunjungi';
+
+        const mergedRecord = {
+          ...cloudRec,
+          ...localRec
         };
+
+        if (cloudIsVisited && !localIsVisited) {
+          // Retain ground-truth verification data
+          mergedRecord.statusKunjungan = 'Sudah Dikunjungi';
+          mergedRecord.tanggalPemeriksaan = cloudRec.tanggalPemeriksaan || localRec.tanggalPemeriksaan;
+          mergedRecord.catatanPemeriksa = cloudRec.catatanPemeriksa || localRec.catatanPemeriksa;
+          mergedRecord.dokumentasiBukti = cloudRec.dokumentasiBukti || localRec.dokumentasiBukti;
+          mergedRecord.namaPendata = cloudRec.namaPendata || localRec.namaPendata;
+          mergedRecord.fotoKkKtp = cloudRec.fotoKkKtp || localRec.fotoKkKtp;
+          mergedRecord.fotoDepanRumah = cloudRec.fotoDepanRumah || localRec.fotoDepanRumah;
+          mergedRecord.foto_hunian_url = cloudRec.foto_hunian_url || localRec.foto_hunian_url;
+          mergedRecord.foto_ktp_url = cloudRec.foto_ktp_url || localRec.foto_ktp_url;
+          mergedRecord.catatan_pendata = cloudRec.catatan_pendata || localRec.catatan_pendata;
+        }
+
+        // Keep cloud photo base64 strings if local doesn't have them
+        if (cloudIsVisited && localIsVisited) {
+          if (!mergedRecord.fotoKkKtp) mergedRecord.fotoKkKtp = cloudRec.fotoKkKtp;
+          if (!mergedRecord.fotoDepanRumah) mergedRecord.fotoDepanRumah = cloudRec.fotoDepanRumah;
+          if (!mergedRecord.dokumentasiBukti) mergedRecord.dokumentasiBukti = cloudRec.dokumentasiBukti;
+          if (!mergedRecord.foto_hunian_url) mergedRecord.foto_hunian_url = cloudRec.foto_hunian_url;
+          if (!mergedRecord.foto_ktp_url) mergedRecord.foto_ktp_url = cloudRec.foto_ktp_url;
+        }
+
+        mergedList[existingIndex] = mergedRecord;
       } else {
         // Completely local record
         mergedList.unshift(overrides[id]);
@@ -206,6 +239,34 @@ function mergeRecordsWithOverrides(cloudRecords: SLRTRecord[]): SLRTRecord[] {
     console.error("Gagal melakukan merge data lokal dengan awan:", e);
     return cloudRecords;
   }
+}
+
+// Helper to normalize record properties from various possible client/cloud variations
+function normalizeRecord(rec: any): SLRTRecord {
+  if (!rec) return rec;
+  const statusKunjungan = rec.statusKunjungan || rec.status_kunjungan || rec.statuskunjungan || 'Belum Dikunjungi';
+  
+  const fotoKkKtp = rec.fotoKkKtp || rec.foto_ktp_url || rec.foto_kk_ktp || rec.fotokkktp || rec.fotoKk || rec.fotoKtp || '';
+  const fotoDepanRumah = rec.fotoDepanRumah || rec.foto_hunian_url || rec.foto_depan_rumah || rec.fotodepanrumah || rec.fotoRumah || '';
+  const dokumentasiBukti = rec.dokumentasiBukti || rec.dokumentasibukti || rec.dokumentasi_bukti || rec.dokumentasi || rec.fotoOps || rec.foto_ops || rec.foto_ops_url || '';
+  
+  const tanggalPemeriksaan = rec.tanggalPemeriksaan || rec.tanggal_pemeriksaan || rec.tanggalpemeriksaan || '';
+  const catatanPemeriksa = rec.catatanPemeriksa || rec.catatan_pendata || rec.catatan_pemeriksa || rec.catatanpemeriksa || '';
+  const namaPendata = rec.namaPendata || rec.nama_pendata || rec.namapendata || '';
+
+  return {
+    ...rec,
+    statusKunjungan,
+    fotoKkKtp,
+    fotoDepanRumah,
+    dokumentasiBukti,
+    foto_ktp_url: fotoKkKtp,
+    foto_hunian_url: fotoDepanRumah,
+    catatan_pendata: catatanPemeriksa,
+    tanggalPemeriksaan,
+    catatanPemeriksa,
+    namaPendata
+  };
 }
 
 export default function App() {
@@ -225,7 +286,7 @@ export default function App() {
     } catch (e) {
       loaded = loaded.filter(rec => !rec.isDeleted && (rec as any).isDeleted !== 'true');
     }
-    return mergeRecordsWithOverrides(loaded);
+    return mergeRecordsWithOverrides(loaded.map(normalizeRecord));
   });
 
   // User Authentication & Role Perspective
@@ -322,7 +383,8 @@ export default function App() {
           const filtered = json.records.filter((rec: any) => {
             return !deletedIds.includes(rec.id) && !rec.isDeleted && rec.isDeleted !== 'true';
           });
-          const merged = mergeRecordsWithOverrides(filtered);
+          const normalized = filtered.map(normalizeRecord);
+          const merged = mergeRecordsWithOverrides(normalized);
           setRecords(merged);
           localStorage.setItem('slrt_records', JSON.stringify(merged));
         }
@@ -613,7 +675,8 @@ export default function App() {
           const filtered = json.records.filter((rec: any) => {
             return !deletedIds.includes(rec.id) && !rec.isDeleted && rec.isDeleted !== 'true';
           });
-          const merged = mergeRecordsWithOverrides(filtered);
+          const normalized = filtered.map(normalizeRecord);
+          const merged = mergeRecordsWithOverrides(normalized);
           setRecords(merged);
           localStorage.setItem('slrt_records', JSON.stringify(merged));
         }
@@ -1133,27 +1196,61 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setFormJenisLayanan('');
   };
 
-  // Geotagging Coordinates Utility - Defaults to Tanjungbalai
+  // Global-like in-memory cache variable inside App closure to prevent GPS hardware wait lag on consecutive captures
+  const cachedGeotagCoordinatesRef = useRef<{ latitude: number; longitude: number; timestamp: string; address: string } | null>(null);
+
+  // Silent automatic GPS coordinate pre-fetching on startup
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const today = new Date();
+          const timestampStr = today.toLocaleString('id-ID') + ' WIB';
+          cachedGeotagCoordinatesRef.current = {
+            latitude: Number(pos.coords.latitude.toFixed(6)),
+            longitude: Number(pos.coords.longitude.toFixed(6)),
+            timestamp: timestampStr,
+            address: 'Survei Geotagging Real-time Lapangan'
+          };
+        },
+        () => {},
+        { enableHighAccuracy: false, timeout: 5000 }
+      );
+    }
+  }, []);
+
+  // Geotagging Coordinates Utility - Defaults to Tanjungbalai (with 0ms instant cached-speed lookup)
   const getGeotagCoordinates = (): Promise<{ latitude: number; longitude: number; timestamp: string; address: string }> => {
+    const today = new Date();
+    const timestampStr = today.toLocaleString('id-ID') + ' WIB';
+
+    if (cachedGeotagCoordinatesRef.current) {
+      // Return the cached position with fresh timezone timestamp immediately without any hardware lookup delay!
+      return Promise.resolve({
+        ...cachedGeotagCoordinatesRef.current,
+        timestamp: timestampStr
+      });
+    }
+
     return new Promise((resolve) => {
-      const today = new Date();
-      const timestampStr = today.toLocaleString('id-ID') + ' WIB';
       const defaultData = {
         latitude: 2.9645,
         longitude: 99.8005,
         timestamp: timestampStr,
-        address: 'Dinsos Kota Tanjungbalai, Kel. Pantai Johor, Kec. Datuk Bandar'
+        address: 'Survei Geotagging Real-time Lapangan'
       };
 
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
-            resolve({
+            const result = {
               latitude: Number(pos.coords.latitude.toFixed(6)),
               longitude: Number(pos.coords.longitude.toFixed(6)),
               timestamp: timestampStr,
               address: 'Survei Geotagging Real-time Lapangan'
-            });
+            };
+            cachedGeotagCoordinatesRef.current = result; // cache it for consecutive photos
+            resolve(result);
           },
           () => {
             const rLat = 2.9645 + (Math.random() - 0.5) * 0.005;
@@ -1165,7 +1262,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               address: 'GPS Tanjungbalai, Sumatera Utara'
             });
           },
-          { timeout: 2500 }
+          { enableHighAccuracy: false, timeout: 1200 } // Super fast low-timeout prevents app freezing while requesting geolocation
         );
       } else {
         resolve(defaultData);

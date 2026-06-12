@@ -61,10 +61,10 @@ export default function BentoRecordDetails({
 
   const statusStyle = getStatusStyle(rec.status);
 
-  const fotoKk = rec.fotoKkKtp || rec.foto_ktp_url || '';
-  const fotoRumah = rec.fotoDepanRumah || rec.foto_hunian_url || '';
-  const fotoOps = rec.dokumentasiBukti || '';
-  const catatan = rec.catatanPemeriksa || rec.catatan_pendata || '';
+  const fotoKk = rec.fotoKkKtp || rec.foto_ktp_url || (rec as any).foto_kk_ktp || (rec as any).fotokkktp || (rec as any).fotoKk || '';
+  const fotoRumah = rec.fotoDepanRumah || rec.foto_hunian_url || (rec as any).foto_depan_rumah || (rec as any).fotodepanrumah || (rec as any).fotoRumah || '';
+  const fotoOps = rec.dokumentasiBukti || (rec as any).dokumentasibukti || (rec as any).dokumentasi_bukti || (rec as any).dokumentasi || (rec as any).fotoOps || (rec as any).foto_ops || '';
+  const catatan = rec.catatanPemeriksa || rec.catatan_pendata || (rec as any).catatanpemeriksa || (rec as any).catatan_pemeriksa || '';
 
   // Dynamically calculate verify photo count and reactive status checklist
   const countPhotos = [fotoKk, fotoRumah, fotoOps].filter(Boolean).length;
