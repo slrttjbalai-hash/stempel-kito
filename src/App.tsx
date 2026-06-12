@@ -40,6 +40,7 @@ import { jsPDF } from 'jspdf';
 import BentoRecordDetails from './components/BentoRecordDetails';
 import SmartParserTab from './components/SmartParserTab';
 import HelpTab from './components/HelpTab';
+import DashboardSummary from './components/DashboardSummary';
 import * as XLSX from 'xlsx';
 
 function parseMonthAndYear(dateStr: string) {
@@ -489,6 +490,15 @@ export default function App() {
   }, [verifierPhoto]);
   const [selectedFacilitatorFilter, setSelectedFacilitatorFilter] = useState<string>('all');
   const [selectedPendataFilter, setSelectedPendataFilter] = useState<string>('all');
+
+  // Link and auto-filter display based on the currently logged-in facilitator account name
+  useEffect(() => {
+    if (userRole === 'facilitator' && session?.role === 'facilitator' && session?.name) {
+      setSelectedFacilitatorFilter(session.name);
+    } else {
+      setSelectedFacilitatorFilter('all');
+    }
+  }, [userRole, session]);
   const [visiblePasswords, setVisiblePasswords] = useState<{[key: string]: boolean}>({});
 
   // Real Camera States for Real-time capture & Geotagting
@@ -523,8 +533,8 @@ export default function App() {
   const [backgroundSyncStatus, setBackgroundSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [syncingTargetName, setSyncingTargetName] = useState<string>('');
 
-  // State for active tabs: 'all-records' | 'add-record' | 'smart-parser' | 'help'
-  const [activeTab, setActiveTab] = useState<'all-records' | 'add-record' | 'smart-parser' | 'help'>('all-records');
+  // State for active tabs: 'all-records' | 'add-record' | 'smart-parser' | 'help' | 'dashboard-summary' | 'facilitators'
+  const [activeTab, setActiveTab] = useState<'all-records' | 'add-record' | 'smart-parser' | 'help' | 'dashboard-summary' | 'facilitators'>('all-records');
 
   // State for filtering
   const [searchQuery, setSearchQuery] = useState('');
@@ -1453,7 +1463,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
   const handleOpenVerifierModal = (rec: SLRTRecord) => {
     setSelectedVerifierRecord(rec);
     setVerifierNotes(rec.catatanPemeriksa || rec.catatan_pendata || '');
-    setVerifierNamaPendata(rec.namaPendata || rec.namaFasilitator || session?.name || '');
+    // Prioritize active logged-in facilitator's name so we link data correctly to their account!
+    setVerifierNamaPendata(session?.name || rec.namaPendata || rec.namaFasilitator || '');
     setVerifierFotoKkKtp(rec.fotoKkKtp || rec.foto_ktp_url || '');
     setVerifierFotoDepanRumah(rec.fotoDepanRumah || rec.foto_hunian_url || '');
     
@@ -1497,15 +1508,36 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           ...rec,
           statusKunjungan: 'Sudah Dikunjungi' as const,
           tanggalPemeriksaan: verifierDate.trim() || 'Hari Ini',
-          catatanPemeriksa: verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.',
+          
+          namaFasilitator: verifierNamaPendata.trim() || session?.name || rec.namaFasilitator || 'Petugas SLRT',
+          namaPendata: verifierNamaPendata.trim() || session?.name || rec.namaFasilitator || 'Petugas SLRT',
+          nama_pendata: verifierNamaPendata.trim() || session?.name || rec.namaFasilitator || 'Petugas SLRT',
+          namapendata: verifierNamaPendata.trim() || session?.name || rec.namaFasilitator || 'Petugas SLRT',
+          
           dokumentasiBukti: verifierPhoto,
-          namaPendata: verifierNamaPendata.trim() || rec.namaFasilitator || session?.name || 'Petugas SLRT',
+          dokumentasibukti: verifierPhoto,
+          dokumentasi_bukti: verifierPhoto,
+          fotoOps: verifierPhoto,
+          foto_ops: verifierPhoto,
+          foto_ops_url: verifierPhoto,
+          
+          catatanPemeriksa: verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.',
+          catatanpemeriksa: verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.',
+          catatan_pemeriksa: verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.',
+          catatan_pendata: verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.',
+          
           fotoKkKtp: verifierFotoKkKtp,
-          fotoDepanRumah: verifierFotoDepanRumah,
-          // Field Application Compatibility
-          foto_hunian_url: verifierFotoDepanRumah,
           foto_ktp_url: verifierFotoKkKtp,
-          catatan_pendata: verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.'
+          foto_kk_ktp: verifierFotoKkKtp,
+          fotokkktp: verifierFotoKkKtp,
+          fotoKk: verifierFotoKkKtp,
+          fotoKtp: verifierFotoKkKtp,
+          
+          fotoDepanRumah: verifierFotoDepanRumah,
+          foto_hunian_url: verifierFotoDepanRumah,
+          foto_depan_rumah: verifierFotoDepanRumah,
+          fotodepanrumah: verifierFotoDepanRumah,
+          fotoRumah: verifierFotoDepanRumah
         };
         compiledRecordForSync = updated;
         return updated;
@@ -3937,6 +3969,21 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
             </button>
 
             <button
+              onClick={() => setActiveTab('dashboard-summary')}
+              id="dashboard-tab-trigger"
+              className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                activeTab === 'dashboard-summary' 
+                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
+                  : 'text-slate-650 hover:bg-slate-50 hover:text-slate-905'
+              }`}
+            >
+              <span>📊 Ringkasan Statistik</span>
+              <span className="bg-indigo-100 text-indigo-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-indigo-200">
+                Baru
+              </span>
+            </button>
+
+            <button
               onClick={() => { resetForm(); setActiveTab('add-record'); }}
               className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                 activeTab === 'add-record' && !editingId
@@ -4803,6 +4850,11 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           {/* 4. HELP PANDUAN GUIDE TAB */}
           {activeTab === 'help' && (
             <HelpTab />
+          )}
+
+          {/* 4.5. DASHBOARD STATISTICAL SUMMARY TAB */}
+          {activeTab === 'dashboard-summary' && (
+            <DashboardSummary records={records} />
           )}
 
           {/* 5. FACILITATOR MANAGEMENT TAB (ONLY ADMIN ACCESS) */}
