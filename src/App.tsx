@@ -903,6 +903,18 @@ export default function App() {
   const [verifierFotoDepanRumah, setVerifierFotoDepanRumah] = useState('');
   const [verifierLat, setVerifierLat] = useState<number | null>(null);
   const [verifierLng, setVerifierLng] = useState<number | null>(null);
+  const [photoResolutionMode, setPhotoResolutionMode] = useState<'standard' | 'high'>(() => {
+    const saved = localStorage.getItem('slrt_photo_resolution_mode');
+    return (saved === 'standard' || saved === 'high') ? saved : 'high';
+  });
+
+  const [formLatitude, setFormLatitude] = useState<number | null>(null);
+  const [formLongitude, setFormLongitude] = useState<number | null>(null);
+
+  const changePhotoResolutionMode = (mode: 'standard' | 'high') => {
+    setPhotoResolutionMode(mode);
+    localStorage.setItem('slrt_photo_resolution_mode', mode);
+  };
 
   const memoizedVerifierFotoKkKtp = useMemo(() => {
     return getSafeBase64Url(verifierFotoKkKtp);
@@ -966,7 +978,7 @@ export default function App() {
   const [syncingTargetName, setSyncingTargetName] = useState<string>('');
 
   // State for active tabs: 'all-records' | 'add-record' | 'smart-parser' | 'help' | 'dashboard-summary' | 'facilitators'
-  const [activeTab, setActiveTab] = useState<'all-records' | 'add-record' | 'smart-parser' | 'help' | 'dashboard-summary' | 'facilitators'>('all-records');
+  const [activeTab, setActiveTab ] = useState<'all-records' | 'add-record' | 'smart-parser' | 'help' | 'dashboard-summary' | 'facilitators'>('all-records');
 
   // State for filtering
   const [searchQuery, setSearchQuery] = useState('');
@@ -1011,6 +1023,19 @@ export default function App() {
   const [formIndikatorSosialEkonomi, setFormIndikatorSosialEkonomi] = useState<string[]>([]);
   const [formKelayakanHuni, setFormKelayakanHuni] = useState<string[]>([]);
   const [formBantuanDiterimaList, setFormBantuanDiterimaList] = useState<string[]>([]);
+
+  // Automatically acquire coordinate geolocation on opening "Input Kunjungan Baru"
+  useEffect(() => {
+    if (activeTab === 'add-record' && !editingId) {
+      // It is a new record creation, fetch the client's current location immediately
+      getGeotagCoordinates().then(geo => {
+        setFormLatitude(geo.latitude);
+        setFormLongitude(geo.longitude);
+      }).catch(err => {
+        console.error("Gagal mendapatkan koordinat otomatis:", err);
+      });
+    }
+  }, [activeTab, editingId]);
 
   // Raw Chat Copy-paste parser tool states
   const [rawText, setRawText] = useState('');
@@ -1592,6 +1617,13 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       return;
     }
 
+    const isDuplicate = records.some(r => r.nik === cleanNik && r.id !== editingId);
+    if (isDuplicate) {
+      const dupRec = records.find(r => r.nik === cleanNik && r.id !== editingId);
+      alert(`⚠️ Duplikasi NIK Terdeteksi!\n\nNIK (${cleanNik}) sudah terdaftar atas nama "${dupRec?.namaKlien}" (Kelurahan ${dupRec?.kelurahan}, Status Kunjungan: ${dupRec?.statusKunjungan || 'Belum Dikunjungi'}).\n\nHarap periksa kembali NIK yang dimasukkan.`);
+      return;
+    }
+
     const existingRec = editingId ? records.find(r => r.id === editingId) : null;
 
     // Build or update statusHistory
@@ -1687,8 +1719,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       namaPendata: existingRec?.namaPendata,
       catatan_pendata: existingRec?.catatan_pendata,
       diinputOleh: existingRec ? existingRec.diinputOleh : 'Admin',
-      latitude: existingRec?.latitude,
-      longitude: existingRec?.longitude,
+      latitude: formLatitude !== null ? formLatitude : (existingRec?.latitude !== undefined ? existingRec.latitude : undefined),
+      longitude: formLongitude !== null ? formLongitude : (existingRec?.longitude !== undefined ? existingRec.longitude : undefined),
       
       // New fields
       indikatorSosialEkonomi: formIndikatorSosialEkonomi,
@@ -1738,6 +1770,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setFormIndikatorSosialEkonomi([]);
     setFormKelayakanHuni([]);
     setFormBantuanDiterimaList([]);
+    setFormLatitude(null);
+    setFormLongitude(null);
   };
 
   // Global-like in-memory cache variable inside App closure to prevent GPS hardware wait lag on consecutive captures
@@ -1860,15 +1894,16 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     if (videoRef.current && onPhotoCapture) {
       const video = videoRef.current;
       const canvas = document.createElement('canvas');
-      // Set high quality resolution directly at photo click for extreme clarity of documents/assets!
-      const targetW = 960;
-      const targetH = video.videoWidth ? Math.round((video.videoHeight / video.videoWidth) * targetW) : 720;
+      // Set resolution directly at photo click based on user setting
+      const isHighRes = photoResolutionMode === 'high';
+      const targetW = isHighRes ? 960 : 480;
+      const targetH = video.videoWidth ? Math.round((video.videoHeight / video.videoWidth) * targetW) : (isHighRes ? 720 : 360);
       canvas.width = targetW;
       canvas.height = targetH;
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        const dataUrl = canvas.toDataURL('image/jpeg', isHighRes ? 0.85 : 0.70);
         
         // Stop stream and close modal
         stopLiveCamera();
@@ -1890,10 +1925,12 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     img.crossOrigin = "anonymous";
     img.src = imageUrl;
     img.onload = async () => {
-      // Limit dimension sizes to keep canvas operations lightweight and perfectly syncable via modern database storage (~120KB character limit)
+      // Dynamic max dimensions based on the user-controlled photoResolutionMode
+      const isHighRes = photoResolutionMode === 'high';
+      const maxDimension = isHighRes ? 960 : 480;
+      
       let width = img.width;
       let height = img.height;
-      const maxDimension = 960; // Maximum dimension of 960px keeps Base64 string extremely sharp and readable
       if (width > maxDimension || height > maxDimension) {
         if (width > height) {
           height = Math.round((height * maxDimension) / width);
@@ -1953,28 +1990,29 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         ctx.fillText(`🏷️ LOKASI: ${displayAddr}`, paddingLeft, textY);
       }
 
-      // Progressively compress JPG until base64 payload is fully under 120KB
-      let quality = 0.85;
+      // Progressively compress JPG based on size limits of selected quality mode
+      const maxPayloadKb = isHighRes ? 120 : 32;
+      let quality = isHighRes ? 0.85 : 0.70;
       let compressedUrl = canvas.toDataURL('image/jpeg', quality);
       let calculatedPayloadKb = (compressedUrl.length * 0.75) / 1024;
 
       let cycles = 0;
-      while (calculatedPayloadKb > 120 && quality > 0.15 && cycles < 10) {
+      while (calculatedPayloadKb > maxPayloadKb && quality > 0.15 && cycles < 10) {
         quality -= 0.10;
         compressedUrl = canvas.toDataURL('image/jpeg', quality);
         calculatedPayloadKb = (compressedUrl.length * 0.75) / 1024;
         cycles++;
       }
 
-      // If still exceeding 120KB scale down the resolution of image
-      if (calculatedPayloadKb > 120) {
+      // If still exceeding target limit scale down the resolution of image
+      if (calculatedPayloadKb > maxPayloadKb) {
         const shrinkCanvas = document.createElement('canvas');
         shrinkCanvas.width = Math.round(width * 0.8);
         shrinkCanvas.height = Math.round(height * 0.8);
         const shrinkCtx = shrinkCanvas.getContext('2d');
         if (shrinkCtx) {
           shrinkCtx.drawImage(canvas, 0, 0, shrinkCanvas.width, shrinkCanvas.height);
-          compressedUrl = shrinkCanvas.toDataURL('image/jpeg', 0.6);
+          compressedUrl = shrinkCanvas.toDataURL('image/jpeg', isHighRes ? 0.6 : 0.4);
         }
       }
 
@@ -2141,6 +2179,13 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       return;
     }
 
+    const isDuplicate = records.some(r => r.nik === cleanNik);
+    if (isDuplicate) {
+      const dupRec = records.find(r => r.nik === cleanNik);
+      alert(`⚠️ Duplikasi NIK Terdeteksi!\n\nNIK (${cleanNik}) sudah pernah terdaftar atas nama "${dupRec?.namaKlien}" (Kelurahan ${dupRec?.kelurahan}, Status Kunjungan: ${dupRec?.statusKunjungan || 'Belum Dikunjungi'}).\n\nLaporan rujukan mandiri baru tidak dapat diajukan apabila NIK telah terdaftar sebelumnya dalam database pelayanan SLRT.`);
+      return;
+    }
+
     const today = new Date();
     const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
     const months = [
@@ -2299,6 +2344,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setFormIndikatorSosialEkonomi(rec.indikatorSosialEkonomi || []);
     setFormKelayakanHuni(rec.kelayakanHuni || []);
     setFormBantuanDiterimaList(rec.bantuanDiterimaList || []);
+    setFormLatitude(rec.latitude !== undefined && rec.latitude !== null ? rec.latitude : null);
+    setFormLongitude(rec.longitude !== undefined && rec.longitude !== null ? rec.longitude : null);
 
     setActiveTab('add-record');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3505,114 +3552,14 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     doc.setTextColor(100, 116, 139);
     doc.text(`ID Dokumen: ${rec.id}   |   Penginput: ${rec.diinputOleh || 'Admin'}`, 15, 50);
 
-    // Helper functions for sections
-    const drawSectionHeader = (y: number, title: string) => {
-      doc.setFillColor(241, 245, 249);
-      doc.rect(15, y, 180, 6, 'F');
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.setTextColor(15, 118, 110);
-      doc.text(title, 18, y + 4.5);
-      return y + 10;
-    };
-
-    const drawRow = (y: number, label1: string, val1: string, label2?: string, val2?: string) => {
-      // Column 1 stars at x=18. Label limited to 32mm. Value limited to 53mm
-      // Column 2 starts at x=110. Label limited to 32mm. Value limited to 51mm
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-      const label1Lines = doc.splitTextToSize(label1, 32);
-      doc.text(label1Lines, 18, y);
-      
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(30, 41, 59);
-      doc.text(':', 50, y);
-      const val1Lines = doc.splitTextToSize(val1 || '-', 53);
-      doc.text(val1Lines, 52, y);
-      
-      let col1Height = Math.max(label1Lines.length, val1Lines.length) * 4;
-      let col2Height = 0;
-      
-      if (label2) {
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(8);
-        doc.setTextColor(100, 116, 139);
-        const label2Lines = doc.splitTextToSize(label2, 32);
-        doc.text(label2Lines, 110, y);
-        
-        doc.setFont('Helvetica', 'normal');
-        doc.setTextColor(30, 41, 59);
-        doc.text(':', 142, y);
-        const val2Lines = doc.splitTextToSize(val2 || '-', 51);
-        doc.text(val2Lines, 144, y);
-        
-        col2Height = Math.max(label2Lines.length, val2Lines.length) * 4;
-      }
-      
-      const rowHeight = Math.max(col1Height, col2Height, 5.5);
-      const nextY = y + rowHeight;
-      doc.setDrawColor(241, 245, 249);
-      doc.setLineWidth(0.1);
-      doc.line(15, nextY, 195, nextY);
-      return nextY + 3.5;
-    };
-
-    const drawRowFullWidth = (y: number, label: string, val: string) => {
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-      doc.text(label, 18, y);
-      
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(30, 41, 59);
-      doc.text(':', 52, y);
-      
-      const wrappedText = doc.splitTextToSize(val || '-', 138);
-      doc.text(wrappedText, 54, y);
-      
-      const nextY = y + (wrappedText.length * 4) + 1;
-      doc.setDrawColor(241, 245, 249);
-      doc.setLineWidth(0.1);
-      doc.line(15, nextY, 195, nextY);
-      return nextY + 3.5;
-    };
-
-    // SECTION I
-    let currentY = 55;
-    currentY = drawSectionHeader(currentY, 'I. IDENTITAS UTAMA PENGADU & KLIEN');
-    currentY = drawRow(currentY, 'Nama Lengkap Klien', rec.namaKlien, 'Kecamatan / Kel.', `${rec.kecamatan} / ${rec.kelurahan}`);
-    currentY = drawRow(currentY, 'No. HP/WA Active', rec.noTelpon, 'Pekerjaan Kepala RT', rec.pekerjaanKrt);
-    currentY = drawRow(currentY, 'Penerima Kuasa', rec.namaKuasa, 'Estimasi Pendapatan', rec.pendapatanPerbulan);
-    currentY = drawRow(currentY, 'Kelengkapan Berkas', rec.dokumen, 'Status Sosial', rec.status);
-    currentY = drawRowFullWidth(currentY, 'Alamat Lengkap', rec.alamatKlien);
-
-    // SECTION II
-    currentY = drawSectionHeader(currentY + 4, 'II. FASILITAS HUNIAN & INTEGRASI BANTUAN');
-    currentY = drawRow(currentY, 'Rumah Kepemilikan', rec.statusRumah, 'Sumber Penerangan', rec.jenisPenerangan);
-    currentY = drawRow(currentY, 'Akses Sanitasi / MCK', rec.mck, 'Bansos Sedang Aktif', rec.bantuanDiterima || 'Belum Terdaftar');
-
-    // SECTION III
-    currentY = drawSectionHeader(currentY + 4, 'III. DETAIL KASUS ADUAN & RUJUKAN');
-    currentY = drawRow(currentY, 'Jenis Layanan Tujuan', rec.jenisLayanan, 'Fasilitator Terkait', rec.namaFasilitator);
-    currentY = drawRowFullWidth(currentY, 'Deskripsi Keluhan', rec.jenisPengaduan);
-
-    // SECTION IV
-    currentY = drawSectionHeader(currentY + 4, 'IV. STATUS VERIFIKASI FISIK & LAPANGAN (AUDIT)');
-    currentY = drawRow(currentY, 'Status Kunjungan', rec.statusKunjungan || 'Belum Dikunjungi', 'Tanggal Pemeriksaan', rec.tanggalPemeriksaan || 'Belum Diperiksa');
-    currentY = drawRowFullWidth(currentY, 'Catatan Pengawas', rec.catatanPemeriksa || 'Belum ada catatan verifikasi fisik lapangan dari petugas terkait.');
-
-    // Page overflow checking for Section V & signatures
-    // Approximate remaining heights: Header(10) + Photo Boxes(44) + captions(8) = 62mm
-    // Signatures take ~30mm. Total = 92mm.
-    // If currentY is greater than 185, we split to page 2.
     let totalPageCount = 1;
-    if (currentY > 185) {
+
+    // Helper to start a new page dynamically
+    const handleNewPage = (): number => {
       doc.addPage();
-      totalPageCount = 2;
-      currentY = 25; // Reset currentY for Page 2
+      totalPageCount++;
       
-      // Draw dynamic top header line on page 2
+      // Draw dynamic top header line on subsequent pages
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184);
@@ -3620,11 +3567,157 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       doc.setDrawColor(226, 232, 240);
       doc.setLineWidth(0.2);
       doc.line(15, 16, 195, 16);
-      currentY = 22;
-    }
+      return 22; // reset content origin on current page
+    };
+
+    let currentY = 55;
+
+    // Dynamic space controller
+    const ensureSpace = (neededHeight: number): number => {
+      // If current cursor + needed height exceeds safety page limit (265mm), move to next A4 page
+      if (currentY + neededHeight > 265) {
+        currentY = handleNewPage();
+      }
+      return currentY;
+    };
+
+    // Helper functions for sections
+    const drawSectionHeader = (title: string) => {
+      currentY = ensureSpace(10);
+      doc.setFillColor(241, 245, 249);
+      doc.rect(15, currentY, 180, 6, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 118, 110);
+      doc.text(title, 18, currentY + 4.5);
+      currentY += 10;
+    };
+
+    const drawRow = (label1: string, val1: string, label2?: string, val2?: string) => {
+      // Column 1 starts at x=18. Label limited to 32mm. Value limited to 53mm
+      // Column 2 starts at x=110. Label limited to 32mm. Value limited to 51mm
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      const label1Lines = doc.splitTextToSize(label1, 32);
+      
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(30, 41, 59);
+      const val1Lines = doc.splitTextToSize(val1 || '-', 53);
+      
+      let col1Height = Math.max(label1Lines.length, val1Lines.length) * 4;
+      let col2Height = 0;
+      
+      let label2Lines: string[] = [];
+      let val2Lines: string[] = [];
+      
+      if (label2) {
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139);
+        label2Lines = doc.splitTextToSize(label2, 32);
+        
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(30, 41, 59);
+        val2Lines = doc.splitTextToSize(val2 || '-', 51);
+        
+        col2Height = Math.max(label2Lines.length, val2Lines.length) * 4;
+      }
+      
+      const rowHeight = Math.max(col1Height, col2Height, 5.5);
+      currentY = ensureSpace(rowHeight + 3.5);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(label1Lines, 18, currentY);
+      
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(30, 41, 59);
+      doc.text(':', 50, currentY);
+      doc.text(val1Lines, 52, currentY);
+      
+      if (label2) {
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139);
+        doc.text(label2Lines, 110, currentY);
+        
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(30, 41, 59);
+        doc.text(':', 142, currentY);
+        doc.text(val2Lines, 144, currentY);
+      }
+      
+      const nextY = currentY + rowHeight;
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.1);
+      doc.line(15, nextY, 195, nextY);
+      currentY = nextY + 3.5;
+    };
+
+    const drawRowFullWidth = (label: string, val: string) => {
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      const labelLines = doc.splitTextToSize(label, 32);
+      
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(30, 41, 59);
+      const wrappedText = doc.splitTextToSize(val || '-', 138);
+
+      const textHeight = wrappedText.length * 4;
+      const rowHeight = textHeight + 1;
+
+      currentY = ensureSpace(rowHeight + 3.5);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(label, 18, currentY);
+      
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(30, 41, 59);
+      doc.text(':', 52, currentY);
+      doc.text(wrappedText, 54, currentY);
+      
+      const nextY = currentY + rowHeight;
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.1);
+      doc.line(15, nextY, 195, nextY);
+      currentY = nextY + 3.5;
+    };
+
+    // SECTION I
+    drawSectionHeader('I. IDENTITAS UTAMA PENGADU & KLIEN');
+    drawRow('Nama Lengkap Klien', rec.namaKlien, 'Kecamatan / Kel.', `${rec.kecamatan} / ${rec.kelurahan}`);
+    drawRow('No. HP/WA Active', rec.noTelpon, 'Pekerjaan Kepala RT', rec.pekerjaanKrt);
+    drawRow('Penerima Kuasa', rec.namaKuasa, 'Estimasi Pendapatan', rec.pendapatanPerbulan);
+    drawRow('Kelengkapan Berkas', rec.dokumen, 'Status Sosial', rec.status);
+    drawRowFullWidth('Alamat Lengkap', rec.alamatKlien);
+
+    // SECTION II
+    drawSectionHeader('II. FASILITAS HUNIAN & INTEGRASI BANTUAN');
+    drawRow('Rumah Kepemilikan', rec.statusRumah, 'Sumber Penerangan', rec.jenisPenerangan);
+    drawRow('Akses Sanitasi / MCK', rec.mck, 'Bansos Sedang Aktif', rec.bantuanDiterima || 'Belum Terdaftar');
+
+    // SECTION III
+    drawSectionHeader('III. DETAIL KASUS ADUAN & RUJUKAN');
+    drawRow('Jenis Layanan Tujuan', rec.jenisLayanan, 'Fasilitator Terkait', rec.namaFasilitator);
+    drawRowFullWidth('Deskripsi Keluhan', rec.jenisPengaduan);
+
+    // SECTION IV
+    drawSectionHeader('IV. STATUS VERIFIKASI FISIK & LAPANGAN (AUDIT)');
+    drawRow('Status Kunjungan', rec.statusKunjungan || 'Belum Dikunjungi', 'Tanggal Pemeriksaan', rec.tanggalPemeriksaan || 'Belum Diperiksa');
+    drawRowFullWidth('Catatan Pengawas', rec.catatanPemeriksa || 'Belum ada catatan verifikasi fisik lapangan dari petugas terkait.');
 
     // SECTION V
-    currentY = drawSectionHeader(currentY, 'V. DOKUMENTASI HASIL VERIFIKASI LAPORAN');
+    // Calculate total height needed for Section V
+    // 10mm (header) + 3mm (gap) + 40mm (boxes) + 4mm (caption margin) + 7mm (caption texts) = 64mm
+    const sectionVHeight = 64;
+    currentY = ensureSpace(sectionVHeight);
+
+    drawSectionHeader('V. DOKUMENTASI HASIL VERIFIKASI LAPORAN');
     
     const boxWidth = 54;
     const boxHeight = 40;
@@ -3737,6 +3830,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     currentY = boxY + boxHeight + 11;
 
     // Put signatures in a safe place
+    currentY = ensureSpace(30);
     const sigY = currentY + 4;
 
     doc.setFont('Helvetica', 'bold');
@@ -3750,7 +3844,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     doc.setFont('Helvetica', 'bold');
     doc.text(`( ${rec.namaFasilitator} )`, 25, sigY + 24);
 
-    // DRAW FOOTERS DYNAMICALLY
+    // DRAW FOOTERS DYNAMICALLY ON EVERY PAGE
     const drawPageFooter = (pageNum: number, totalPages: number) => {
       doc.setPage(pageNum);
       doc.setDrawColor(226, 232, 240);
@@ -3764,11 +3858,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       doc.text(`Halaman ${pageNum} dari ${totalPages}`, 195, 284, { align: 'right' });
     };
 
-    if (totalPageCount === 1) {
-      drawPageFooter(1, 1);
-    } else {
-      drawPageFooter(1, 2);
-      drawPageFooter(2, 2);
+    for (let i = 1; i <= totalPageCount; i++) {
+      drawPageFooter(i, totalPageCount);
     }
 
     // Download PDF triggers
@@ -4077,9 +4168,43 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                           placeholder="Masukkan 16 digit NIK..."
                           value={wargaAddNik}
                           onChange={(e) => setWargaAddNik(e.target.value.replace(/\D/g, ''))}
-                          className="w-full bg-white border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 font-mono tracking-widest"
+                          className={`w-full bg-white text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none font-mono tracking-widest border transition-all duration-200 ${
+                            wargaAddNik.trim().length > 0 && wargaAddNik.trim().length < 16
+                              ? 'border-amber-400 focus:ring-1 focus:ring-amber-400 bg-amber-50/10'
+                              : wargaAddNik.trim().length === 16 && records.some(r => r.nik === wargaAddNik.trim())
+                              ? 'border-rose-500 focus:ring-1 focus:ring-rose-500 bg-rose-50/25'
+                              : wargaAddNik.trim().length === 16
+                              ? 'border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-emerald-50/10'
+                              : 'border-slate-200 focus:border-amber-600'
+                          }`}
                           required
                         />
+                        {wargaAddNik.trim().length > 0 && wargaAddNik.trim().length < 16 && (
+                          <p className="text-[10px] text-amber-600 mt-1 font-semibold flex items-center gap-1">
+                            ⚠️ Minimal 16 digit ({wargaAddNik.trim().length}/16 digit)
+                          </p>
+                        )}
+                        {wargaAddNik.trim().length === 16 && (() => {
+                          const dupRec = records.find(r => r.nik === wargaAddNik.trim());
+                          if (dupRec) {
+                            return (
+                              <div className="mt-1.5 p-2 bg-rose-50 border border-rose-100 rounded-lg text-[10px] text-rose-700 leading-snug">
+                                <p className="font-extrabold flex items-center gap-1 mb-0.5">
+                                  ❌ NIK TELAH TERDAFTAR!
+                                </p>
+                                <p>Klien: <strong className="font-semibold">{dupRec.namaKlien}</strong></p>
+                                <p>Kecamatan: {dupRec.kecamatan} ({dupRec.kelurahan})</p>
+                                <p>Kunjungan: <span className="underline font-bold">{dupRec.statusKunjungan || 'Belum Dikunjungi'}</span></p>
+                              </div>
+                            );
+                          } else {
+                            return (
+                              <p className="text-[10px] text-emerald-600 mt-1 font-bold flex items-center gap-1">
+                                ✓ NIK valid & siap diregistrasi.
+                              </p>
+                            );
+                          }
+                        })()}
                       </div>
                       <div>
                         <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">6. Pekerjaan Pokok KRT</label>
@@ -5616,6 +5741,40 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       </select>
                     </div>
                   </div>
+
+                  {/* Automatic Location Geotagging telemetry status */}
+                  <div className="mt-4 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                        <span className="text-[10px] font-bold text-indigo-900 uppercase tracking-widest font-mono">
+                          DETEKSI LOKASI OTOMATIS (GPS ADVANCED)
+                        </span>
+                      </div>
+                      <p className="text-[9px] text-slate-500 leading-normal">
+                        Koordinat GPS klien terdeteksi otomatis saat formulir ini dibuka guna memastikan data spasial real-time yang akurat.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <div className="bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 font-mono text-[10px] text-slate-700 flex gap-2">
+                        <span>Lat: <strong>{formLatitude !== null ? formLatitude.toFixed(6) : "Mencari..."}</strong></span>
+                        <span className="text-slate-300">|</span>
+                        <span>Lng: <strong>{formLongitude !== null ? formLongitude.toFixed(6) : "Mencari..."}</strong></span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const geo = await getGeotagCoordinates();
+                          setFormLatitude(geo.latitude);
+                          setFormLongitude(geo.longitude);
+                        }}
+                        className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9px] font-extrabold uppercase tracking-wider transition-colors cursor-pointer"
+                      >
+                        🔄 Segarkan GPS
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 {/* SECTION B */}
@@ -5663,9 +5822,43 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                         placeholder="Masukkan 16 digit NIK..."
                         value={formNik}
                         onChange={(e) => setFormNik(e.target.value.replace(/\D/g, ''))}
-                        className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-lg outline-none focus:border-indigo-500 text-slate-800 font-mono tracking-widest"
+                        className={`w-full bg-white text-xs px-3 py-2 rounded-lg outline-none font-mono tracking-widest border-2 transition-all duration-200 ${
+                          formNik.trim().length > 0 && formNik.trim().length < 16
+                            ? 'border-amber-400 focus:border-amber-600 bg-amber-50/10'
+                            : formNik.trim().length === 16 && records.some(r => r.nik === formNik.trim() && r.id !== editingId)
+                            ? 'border-rose-500 bg-rose-50/25 focus:border-rose-600'
+                            : formNik.trim().length === 16
+                            ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600'
+                            : 'border-slate-200 focus:border-indigo-500 text-slate-800'
+                        }`}
                         required
                       />
+                      {formNik.trim().length > 0 && formNik.trim().length < 16 && (
+                        <p className="text-[10px] text-amber-600 mt-1 font-semibold flex items-center gap-1">
+                          ⚠️ Minimal 16 digit ({formNik.trim().length}/16 digit)
+                        </p>
+                      )}
+                      {formNik.trim().length === 16 && (() => {
+                        const dupRec = records.find(r => r.nik === formNik.trim() && r.id !== editingId);
+                        if (dupRec) {
+                          return (
+                            <div className="mt-1.5 p-2 bg-rose-50 border border-rose-100 rounded-lg text-[10px] text-rose-700 leading-snug">
+                              <p className="font-extrabold flex items-center gap-1 mb-0.5">
+                                ❌ NIK TELAH TERDAFTAR (DUPLIKAT)!
+                              </p>
+                              <p>Klien: <strong className="font-semibold">{dupRec.namaKlien}</strong></p>
+                              <p>Kelurahan: {dupRec.kelurahan} ({dupRec.kecamatan})</p>
+                              <p>Kunjungan: <span className="underline font-bold">{dupRec.statusKunjungan || 'Belum Dikunjungi'}</span></p>
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <p className="text-[10px] text-emerald-600 mt-1 font-bold flex items-center gap-1">
+                              ✓ NIK valid & bersih, siap disimpan.
+                            </p>
+                          );
+                        }
+                      })()}
                     </div>
 
                     <div>
@@ -6226,6 +6419,77 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 </div>
               </div>
 
+              {/* ⚙️ PENGATURAN RESOLUSI & STORAGE IMPACT */}
+              <div id="camera-upload-settings" className="border border-slate-200/80 p-3.5 rounded-2xl bg-slate-50 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm">⚙️</span>
+                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">Konfigurasi Kamera &amp; Unggah</span>
+                  </div>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-mono">
+                    Mode Aktif: {photoResolutionMode === 'high' ? 'HD' : 'Standard'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => changePhotoResolutionMode('standard')}
+                    className={`p-2.5 rounded-xl border flex flex-col items-start gap-1 text-left transition-all cursor-pointer ${
+                      photoResolutionMode === 'standard'
+                        ? 'border-indigo-600 bg-indigo-50 text-indigo-900 ring-1 ring-indigo-500'
+                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-650'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                      <span className="text-xs font-bold font-sans">Kualitas Standar</span>
+                    </div>
+                    <span className="text-[9px] font-normal leading-normal text-slate-500">
+                      Resolusi 480px, Sangat Ringan (~28 KB/foto). Hemat kuota daerah minim sinyal.
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => changePhotoResolutionMode('high')}
+                    className={`p-2.5 rounded-xl border flex flex-col items-start gap-1 text-left transition-all cursor-pointer ${
+                      photoResolutionMode === 'high'
+                        ? 'border-indigo-600 bg-indigo-50 text-indigo-900 ring-1 ring-indigo-500'
+                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-655'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      <span className="text-xs font-bold font-sans">Klaritas Tinggi (HD)</span>
+                    </div>
+                    <span className="text-[9px] font-normal leading-normal text-slate-500">
+                      Resolusi 960px, Super Tajam (~115 KB/foto). Teks KTP/KK terpantau jernih.
+                    </span>
+                  </button>
+                </div>
+
+                {/* STORAGE IMPACT INDICATOR BAR */}
+                <div className="pt-2 border-t border-slate-150/50">
+                  <div className="flex justify-between text-[9px] text-slate-500 font-semibold mb-1">
+                    <span>Estimasi Beban Penyimpanan (Storage Impact):</span>
+                    <span className={photoResolutionMode === 'high' ? 'text-amber-600 font-black' : 'text-emerald-600 font-black'}>
+                      {photoResolutionMode === 'high' ? 'Sedang-Tinggi (~115 KB)' : 'Sangat Rendah (~28 KB)'}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                    <div 
+                      className={`h-full transition-all duration-300 rounded-full ${
+                        photoResolutionMode === 'high' ? 'w-[75%] bg-amber-500' : 'w-[20%] bg-emerald-500'
+                      }`}
+                    ></div>
+                  </div>
+                  <p className="text-[8px] text-slate-450 italic mt-1 leading-normal">
+                    * Sistem memproses gambar melalui canvas lokal pada browser perangkat petugas sebelum pengiriman database demi efisiensi tinggi.
+                  </p>
+                </div>
+              </div>
+
               {/* KK/KTP Dokumen Section */}
               <div className="border border-slate-150 p-3 rounded-2xl bg-slate-50/50 space-y-2">
                 <div className="flex justify-between items-center">
@@ -6569,6 +6833,35 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   </span>
                 </>
               )}
+            </div>
+
+            {/* Live resolution selection in camera modal */}
+            <div className="bg-slate-950 p-2.5 rounded-2xl border border-slate-800 flex items-center justify-between text-xs">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">RESOLUSI BIDIK:</span>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => changePhotoResolutionMode('standard')}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all whitespace-nowrap cursor-pointer ${
+                    photoResolutionMode === 'standard'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-800 hover:bg-slate-750 text-slate-400'
+                  }`}
+                >
+                  Standard (~28KB)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changePhotoResolutionMode('high')}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all whitespace-nowrap cursor-pointer ${
+                    photoResolutionMode === 'high'
+                      ? 'bg-emerald-600 text-white font-bold'
+                      : 'bg-slate-800 hover:bg-slate-750 text-slate-400'
+                  }`}
+                >
+                  HD (~115KB)
+                </button>
+              </div>
             </div>
 
             {/* Controls */}
