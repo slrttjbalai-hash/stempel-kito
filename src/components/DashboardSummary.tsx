@@ -2,6 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { 
   BarChart, 
   Bar, 
+  LineChart,
+  Line,
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -148,6 +150,59 @@ export default function DashboardSummary({ records }: DashboardSummaryProps) {
     });
 
     return flatList.sort((a, b) => b.total - a.total);
+  }, [records]);
+
+  // 6. Monthly trend data calculation
+  const monthlyTrendData = useMemo(() => {
+    const monthsIndo = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    
+    const stats: { [key: string]: { bulan: string; 'Jumlah Aduan': number; 'Selesai Verifikasi': number } } = {};
+    monthsIndo.forEach(m => {
+      stats[m] = { bulan: m, 'Jumlah Aduan': 0, 'Selesai Verifikasi': 0 };
+    });
+
+    records.forEach(r => {
+      let detectedMonth = '';
+      if (r.hariTanggal) {
+        const foundMonth = monthsIndo.find(m => r.hariTanggal.toLowerCase().includes(m.toLowerCase()));
+        if (foundMonth) {
+          detectedMonth = foundMonth;
+        }
+      }
+      
+      if (!detectedMonth && r.hariTanggal) {
+        const dateObj = new Date(r.hariTanggal);
+        if (!isNaN(dateObj.getTime())) {
+          detectedMonth = monthsIndo[dateObj.getMonth()];
+        }
+      }
+
+      if (!detectedMonth) {
+        detectedMonth = 'Juni'; 
+      }
+
+      if (stats[detectedMonth]) {
+        stats[detectedMonth]['Jumlah Aduan'] += 1;
+        if (r.statusKunjungan === 'Sudah Dikunjungi') {
+          stats[detectedMonth]['Selesai Verifikasi'] += 1;
+        }
+      }
+    });
+
+    const activeMonths = monthsIndo.map(m => stats[m]).filter(m => m['Jumlah Aduan'] > 0);
+    
+    if (activeMonths.length === 0) {
+      return [
+        { bulan: 'Mei', 'Jumlah Aduan': 0, 'Selesai Verifikasi': 0 },
+        { bulan: 'Juni', 'Jumlah Aduan': 0, 'Selesai Verifikasi': 0 },
+        { bulan: 'Juli', 'Jumlah Aduan': 0, 'Selesai Verifikasi': 0 }
+      ];
+    }
+    
+    return activeMonths;
   }, [records]);
 
   const [pieFocusTab, setPieFocusTab] = useState<'kesejahteraan' | 'sumber'>('kesejahteraan');
@@ -425,6 +480,80 @@ export default function DashboardSummary({ records }: DashboardSummaryProps) {
               ))
             )}
           </div>
+        </div>
+      </div>
+
+      {/* CARD 3: TREN PENGADUAN BULANAN (Monthly trend of complaints to monitor facilitator workload) */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col gap-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3 font-sans">
+          <div className="flex items-center gap-1.5">
+            <TrendingUp className="w-4.5 h-4.5 text-indigo-650" />
+            <div>
+              <h2 className="text-xs font-black text-slate-800 uppercase tracking-widest leading-none">
+                Tren Pengaduan &amp; Beban Kerja Bulanan
+              </h2>
+              <p className="text-[10px] text-slate-400 leading-normal mt-1 italic">
+                Memantau fluktuasi aduan masuk vs kontribusi penyelesaian verifikasi fisik fasilitator lapangan
+              </p>
+            </div>
+          </div>
+          <span className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded-lg font-black uppercase font-mono">
+            Tahun 2026
+          </span>
+        </div>
+
+        <div className="h-[250px] w-full" id="chart-trend-bulanan-container">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={monthlyTrendData}
+              margin={{ top: 10, right: 30, left: -20, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis 
+                dataKey="bulan" 
+                tick={{ fill: '#64748b', fontSize: 9, fontWeight: 650 }}
+                axisLine={{ stroke: '#cbd5e1' }}
+                tickLine={false}
+              />
+              <YAxis 
+                tick={{ fill: '#64748b', fontSize: 9, fontWeight: 650 }}
+                axisLine={{ stroke: '#cbd5e1' }}
+                tickLine={false}
+                allowDecimals={false}
+              />
+              <Tooltip 
+                contentStyle={{ 
+                  backgroundColor: '#1e293b', 
+                  borderRadius: '12px', 
+                  color: '#fff', 
+                  border: 'none',
+                  fontFamily: 'sans-serif',
+                  fontSize: '11px',
+                  padding: '8px 12px',
+                }}
+                itemStyle={{ color: '#fff' }}
+              />
+              <Legend 
+                wrapperStyle={{ fontSize: '10px', paddingTop: '10px', fontWeight: 'bold' }}
+                iconType="circle"
+              />
+              <Line 
+                type="monotone" 
+                dataKey="Jumlah Aduan" 
+                stroke="#4f46e5" 
+                strokeWidth={3} 
+                activeDot={{ r: 6 }} 
+                name="Aduan Baru Masuk"
+              />
+              <Line 
+                type="monotone" 
+                dataKey="Selesai Verifikasi" 
+                stroke="#10b981" 
+                strokeWidth={3} 
+                name="Selesai Kunjungan Lapangan"
+              />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       </div>
 

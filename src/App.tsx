@@ -35,7 +35,7 @@ import {
   UserCheck
 } from 'lucide-react';
 
-import { SLRTRecord, TANJUNGBALAI_LOCATIONS, INITIAL_RECORDS, FacilitatorUser, INITIAL_FACILITATORS, getSafeBase64Url } from './types';
+import { SLRTRecord, TANJUNGBALAI_LOCATIONS, INITIAL_RECORDS, FacilitatorUser, INITIAL_FACILITATORS, getSafeBase64Url, KRITERIA_SOSIAL_EKONOMI, KRITERIA_KELAYAKAN_HUNI, KRITERIA_BANTUAN_SOSIAL } from './types';
 import { jsPDF } from 'jspdf';
 import BentoRecordDetails from './components/BentoRecordDetails';
 import SmartParserTab from './components/SmartParserTab';
@@ -331,6 +331,89 @@ function normalizeRecord(rec: any): SLRTRecord {
   const catatanPemeriksa = rec.catatanPemeriksa || rec.catatan_pendata || rec.catatan_pemeriksa || rec.catatanpemeriksa || '';
   const namaPendata = rec.namaPendata || rec.nama_pendata || rec.namapendata || '';
 
+  // Parse or default Indikator Sosial Ekonomi
+  let indikatorSosialEkonomi = rec.indikatorSosialEkonomi || [];
+  if (indikatorSosialEkonomi.length === 0) {
+    if (rec.status?.toLowerCase().includes('sangat')) {
+      indikatorSosialEkonomi = [
+        "Pendapatan di bawah UMR / tidak menentu",
+        "Pekerjaan Kepala Keluarga serabutan / non-formal",
+        "Tidak memiliki jaminan kesehatan mandiri"
+      ];
+    } else if (rec.status?.toLowerCase().includes('miskin')) {
+      indikatorSosialEkonomi = [
+        "Pendapatan di bawah UMR / tidak menentu",
+        "Pekerjaan Kepala Keluarga serabutan / non-formal"
+      ];
+    } else if (rec.status?.toLowerCase().includes('rentan')) {
+      indikatorSosialEkonomi = [
+        "Pendapatan di bawah UMR / tidak menentu"
+      ];
+    }
+  }
+
+  // Parse or default Kelayakan Huni
+  let kelayakanHuni = rec.kelayakanHuni || [];
+  if (kelayakanHuni.length === 0) {
+    if (rec.statusRumah?.toLowerCase().includes('sewa') || rec.statusRumah?.toLowerCase().includes('kontrak')) {
+      kelayakanHuni.push("Status tinggal menyewa / sewa bulanan / menumpang keluarga");
+    } else if (rec.statusRumah?.toLowerCase().includes('numpang') || rec.statusRumah?.toLowerCase().includes('menumpang')) {
+      kelayakanHuni.push("Status tinggal menyewa / sewa bulanan / menumpang keluarga");
+    }
+
+    if (rec.jenisPenerangan?.toLowerCase().includes('numpang') || rec.jenisPenerangan?.toLowerCase().includes('tetangga')) {
+      kelayakanHuni.push("Penerangan meminjam tetangga / PLN subsidi numpang");
+    }
+
+    if (rec.mck?.toLowerCase().includes('tidak layak') || rec.mck?.toLowerCase().includes('umum') || rec.mck?.toLowerCase().includes('kurang')) {
+      kelayakanHuni.push("MCK menumpang / umum / tidak layak");
+    }
+    
+    if (id === 'rec-2') {
+      kelayakanHuni.push("Atap rumah bocor parah / seng keropos");
+    }
+  }
+
+  // Parse or default Bantuan Diterima List
+  let bantuanDiterimaList = rec.bantuanDiterimaList || [];
+  if (bantuanDiterimaList.length === 0 && rec.bantuanDiterima) {
+    const rawVal = rec.bantuanDiterima;
+    if (rawVal && rawVal !== 'Belum Ada' && rawVal !== 'Belum Terdaftar') {
+      bantuanDiterimaList = rawVal.split(',').map((s: string) => s.trim()).filter((s: string) => s && s.toLowerCase() !== 'belum ada');
+    }
+  }
+
+  // Generate fallback Status History
+  let statusHistory = rec.statusHistory || [];
+  if (statusHistory.length === 0) {
+    statusHistory = [
+      {
+        status: 'Dibuat',
+        timestamp: rec.hariTanggal || 'Senin, 01 Juni 2026',
+        note: rec.diinputOleh === 'Warga' ? 'Aduan dilaporkan mandiri oleh warga melalui web portal.' : 'Aduan diregistrasi secara resmi oleh Petugas Admin Dinas Sosial Kota Tanjungbalai.',
+        updatedBy: rec.diinputOleh === 'Warga' ? rec.namaKlien : 'Admin Dinsos'
+      }
+    ];
+
+    if (rec.namaFasilitator && rec.namaFasilitator !== '-') {
+      statusHistory.push({
+        status: 'Ditugaskan',
+        timestamp: rec.hariTanggal || 'Senin, 01 Juni 2026',
+        note: `Ditugaskan secara otomatis kepada Petugas Fasilitator Wilayah: ${rec.namaFasilitator}.`,
+        updatedBy: 'Sistem SLRT'
+      });
+    }
+
+    if (statusKunjungan === 'Sudah Dikunjungi') {
+      statusHistory.push({
+        status: 'Diverifikasi',
+        timestamp: rec.tanggalPemeriksaan || 'Kamis, 04 Juni 2026',
+        note: catatanPemeriksa || 'Kunjungan rumah & verifikasi 18 instrumen kelayakan di lapangan dinyatakan selesai dan sah.',
+        updatedBy: namaPendata || rec.namaFasilitator || 'Fasilitator Lapangan'
+      });
+    }
+  }
+
   return {
     ...rec,
     statusKunjungan,
@@ -342,7 +425,11 @@ function normalizeRecord(rec: any): SLRTRecord {
     catatan_pendata: catatanPemeriksa,
     tanggalPemeriksaan,
     catatanPemeriksa,
-    namaPendata
+    namaPendata,
+    indikatorSosialEkonomi,
+    kelayakanHuni,
+    bantuanDiterimaList,
+    statusHistory
   };
 }
 
@@ -420,7 +507,16 @@ const CSV_HEADER_MAP: Record<string, keyof SLRTRecord> = {
   'foto depan rumah': 'fotoDepanRumah',
   'foto depan': 'fotoDepanRumah',
   'dokumentasi bukti': 'dokumentasiBukti',
-  'bukti': 'dokumentasiBukti'
+  'bukti': 'dokumentasiBukti',
+  'indikator kerentanan sosial ekonomi': 'indikatorSosialEkonomi',
+  'indikator sosial ekonomi': 'indikatorSosialEkonomi',
+  'kerentanan sosial ekonomi': 'indikatorSosialEkonomi',
+  'kondisi fisik hunian': 'kelayakanHuni',
+  'kelayakan huni': 'kelayakanHuni',
+  'kelayakan rumah': 'kelayakanHuni',
+  'program bantuan diterima list': 'bantuanDiterimaList',
+  'bantuan diterima list': 'bantuanDiterimaList',
+  'daftar bantuan diterima': 'bantuanDiterimaList'
 };
 
 // Help parse a CSV line considering double quoted sub-segments containing commas
@@ -836,6 +932,9 @@ export default function App() {
   const [wargaAddMck, setWargaAddMck] = useState('Sendiri Layak');
   const [wargaAddPendapatanPerbulan, setWargaAddPendapatanPerbulan] = useState('');
   const [wargaAddJenisLayanan, setWargaAddJenisLayanan] = useState('');
+  const [wargaAddIndikatorSosialEkonomi, setWargaAddIndikatorSosialEkonomi] = useState<string[]>([]);
+  const [wargaAddKelayakanHuni, setWargaAddKelayakanHuni] = useState<string[]>([]);
+  const [wargaAddBantuanDiterimaList, setWargaAddBantuanDiterimaList] = useState<string[]>([]);
   const [wargaFormSuccess, setWargaFormSuccess] = useState<string | null>(null);
 
   const [backgroundSyncStatus, setBackgroundSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
@@ -883,6 +982,9 @@ export default function App() {
   const [formPendapatanPerbulan, setFormPendapatanPerbulan] = useState('');
   const [formJenisPengaduan, setFormJenisPengaduan] = useState('');
   const [formJenisLayanan, setFormJenisLayanan] = useState('');
+  const [formIndikatorSosialEkonomi, setFormIndikatorSosialEkonomi] = useState<string[]>([]);
+  const [formKelayakanHuni, setFormKelayakanHuni] = useState<string[]>([]);
+  const [formBantuanDiterimaList, setFormBantuanDiterimaList] = useState<string[]>([]);
 
   // Raw Chat Copy-paste parser tool states
   const [rawText, setRawText] = useState('');
@@ -1443,6 +1545,56 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
     const existingRec = editingId ? records.find(r => r.id === editingId) : null;
 
+    // Build or update statusHistory
+    let statusHistory = existingRec?.statusHistory ? [...existingRec.statusHistory] : [];
+    
+    if (!existingRec) {
+      // Creation phase
+      const dateString = formHariTanggal.trim() || (() => {
+        const today = new Date();
+        const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+        const months = [
+          'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+          'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+        ];
+        return `${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
+      })();
+      statusHistory = [
+        {
+          status: 'Dibuat',
+          timestamp: typeof dateString === 'function' ? dateString() : dateString,
+          note: 'Aduan diregistrasi secara resmi oleh Petugas Admin Dinas Sosial Kota Tanjungbalai.',
+          updatedBy: session?.name || 'Admin Dinsos'
+        }
+      ];
+      if (formFasilitator.trim()) {
+        statusHistory.push({
+          status: 'Ditugaskan',
+          timestamp: typeof dateString === 'function' ? dateString() : dateString,
+          note: `Ditugaskan secara otomatis kepada Fasilitator: ${formFasilitator.trim()}.`,
+          updatedBy: session?.name || 'Admin Dinsos'
+        });
+      }
+    } else {
+      // Update phase
+      const today = new Date();
+      const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const months = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      ];
+      const todayFormatted = `${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
+
+      if (existingRec.namaFasilitator !== formFasilitator.trim() && formFasilitator.trim()) {
+        statusHistory.push({
+          status: 'Ditugaskan',
+          timestamp: todayFormatted,
+          note: `Penugasan dialihkan dari ${existingRec.namaFasilitator || 'Tanpa Fasilitator'} kepada ${formFasilitator.trim()}.`,
+          updatedBy: session?.name || 'Admin Dinsos'
+        });
+      }
+    }
+
     const compiledRecord: SLRTRecord = {
       id: editingId || `rec-${Date.now()}`,
       namaFasilitator: formFasilitator.trim(),
@@ -1455,7 +1607,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
           'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
         ];
-        return `${days[today.getDay()]} , ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
+        return `${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
       })(),
       namaKlien: formNamaKlien.trim(),
       pekerjaanKrt: formPekerjaanKrt.trim() || '-',
@@ -1464,7 +1616,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       noTelpon: formNoTelpon.trim() || '-',
       dokumen: formDokumen.trim() || 'KK, KTP',
       status: formStatus,
-      bantuanDiterima: formBantuanDiterima.trim() || 'Belum Ada',
+      bantuanDiterima: formBantuanDiterimaList.length > 0 ? formBantuanDiterimaList.join(', ') : 'Belum Ada',
       statusRumah: formStatusRumah,
       jenisPenerangan: formJenisPenerangan,
       mck: formMck,
@@ -1484,7 +1636,13 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       foto_ktp_url: existingRec?.foto_ktp_url,
       namaPendata: existingRec?.namaPendata,
       catatan_pendata: existingRec?.catatan_pendata,
-      diinputOleh: existingRec ? existingRec.diinputOleh : 'Admin'
+      diinputOleh: existingRec ? existingRec.diinputOleh : 'Admin',
+      
+      // New fields
+      indikatorSosialEkonomi: formIndikatorSosialEkonomi,
+      kelayakanHuni: formKelayakanHuni,
+      bantuanDiterimaList: formBantuanDiterimaList,
+      statusHistory
     };
 
     if (editingId) {
@@ -1524,6 +1682,9 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setFormPendapatanPerbulan('');
     setFormJenisPengaduan('');
     setFormJenisLayanan('');
+    setFormIndikatorSosialEkonomi([]);
+    setFormKelayakanHuni([]);
+    setFormBantuanDiterimaList([]);
   };
 
   // Global-like in-memory cache variable inside App closure to prevent GPS hardware wait lag on consecutive captures
@@ -1829,15 +1990,29 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     let compiledRecordForSync: SLRTRecord | null = null;
     const updatedRecords = records.map(rec => {
       if (rec.id === selectedVerifierRecord.id) {
+        const history = rec.statusHistory ? [...rec.statusHistory] : [];
+        const activeDate = verifierDate.trim() || 'Hari Ini';
+        const activeNotes = verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.';
+        const activeBy = verifierNamaPendata.trim() || session?.name || rec.namaFasilitator || 'Petugas SLRT';
+        
+        // Remove prior verified log if somehow present to prevent doubles, then push fresh
+        const filteredHistory = history.filter(h => h.status !== 'Diverifikasi');
+        filteredHistory.push({
+          status: 'Diverifikasi',
+          timestamp: activeDate,
+          note: activeNotes,
+          updatedBy: activeBy
+        });
+
         const updated = normalizeRecord({
           ...rec,
           statusKunjungan: 'Sudah Dikunjungi' as const,
-          tanggalPemeriksaan: verifierDate.trim() || 'Hari Ini',
+          tanggalPemeriksaan: activeDate,
           
-          namaFasilitator: verifierNamaPendata.trim() || session?.name || rec.namaFasilitator || 'Petugas SLRT',
-          namaPendata: verifierNamaPendata.trim() || session?.name || rec.namaFasilitator || 'Petugas SLRT',
-          nama_pendata: verifierNamaPendata.trim() || session?.name || rec.namaFasilitator || 'Petugas SLRT',
-          namapendata: verifierNamaPendata.trim() || session?.name || rec.namaFasilitator || 'Petugas SLRT',
+          namaFasilitator: activeBy,
+          namaPendata: activeBy,
+          nama_pendata: activeBy,
+          namapendata: activeBy,
           
           dokumentasiBukti: verifierPhoto,
           dokumentasibukti: verifierPhoto,
@@ -1846,10 +2021,10 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           foto_ops: verifierPhoto,
           foto_ops_url: verifierPhoto,
           
-          catatanPemeriksa: verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.',
-          catatanpemeriksa: verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.',
-          catatan_pemeriksa: verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.',
-          catatan_pendata: verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.',
+          catatanPemeriksa: activeNotes,
+          catatanpemeriksa: activeNotes,
+          catatan_pemeriksa: activeNotes,
+          catatan_pendata: activeNotes,
           
           fotoKkKtp: verifierFotoKkKtp,
           foto_ktp_url: verifierFotoKkKtp,
@@ -1862,7 +2037,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           foto_hunian_url: verifierFotoDepanRumah,
           foto_depan_rumah: verifierFotoDepanRumah,
           fotodepanrumah: verifierFotoDepanRumah,
-          fotoRumah: verifierFotoDepanRumah
+          fotoRumah: verifierFotoDepanRumah,
+          statusHistory: filteredHistory
         });
         compiledRecordForSync = updated;
         return updated;
@@ -1904,6 +2080,24 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       ? activeFacilitatingStaff[Math.floor(Math.random() * activeFacilitatingStaff.length)]
       : 'Ahmad Fauzi';
 
+    const statusHistory = [
+      {
+        status: 'Dibuat',
+        timestamp: dateFormatted,
+        note: 'Pendaftaran aduan mandiri secara daring melalui portal mandiri warga.',
+        updatedBy: wargaAddNama.trim()
+      }
+    ];
+
+    if (assignedFasil) {
+      statusHistory.push({
+        status: 'Ditugaskan',
+        timestamp: dateFormatted,
+        note: `Ditugaskan secara otomatis oleh sistem kepada Petugas Fasilitator Wilayah: ${assignedFasil}.`,
+        updatedBy: 'Sistem SLRT'
+      });
+    }
+
     const CitizenReport: SLRTRecord = {
       id: `warga-${Date.now()}`,
       namaFasilitator: assignedFasil,
@@ -1917,7 +2111,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       noTelpon: wargaAddPhone.trim(),
       dokumen: wargaAddNik.trim() ? `KK, KTP (NIK: ${wargaAddNik.trim()})` : wargaAddDokumen.trim(),
       status: wargaAddStatus,
-      bantuanDiterima: wargaAddBantuanDiterima.trim() || 'Belum Ada',
+      bantuanDiterima: wargaAddBantuanDiterimaList.length > 0 ? wargaAddBantuanDiterimaList.join(', ') : 'Belum Ada',
       statusRumah: wargaAddStatusRumah,
       jenisPenerangan: wargaAddJenisPenerangan,
       mck: wargaAddMck,
@@ -1927,7 +2121,13 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       isHighPriority: checkIsHighPriority(wargaAddPengaduan.trim()),
       
       statusKunjungan: 'Belum Dikunjungi',
-      diinputOleh: 'Warga'
+      diinputOleh: 'Warga',
+
+      // New fields
+      indikatorSosialEkonomi: wargaAddIndikatorSosialEkonomi,
+      kelayakanHuni: wargaAddKelayakanHuni,
+      bantuanDiterimaList: wargaAddBantuanDiterimaList,
+      statusHistory
     };
 
     setRecords(prev => [CitizenReport, ...prev]);
@@ -1955,6 +2155,9 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setWargaAddMck('Sendiri Layak');
     setWargaAddPendapatanPerbulan('');
     setWargaAddJenisLayanan('');
+    setWargaAddIndikatorSosialEkonomi([]);
+    setWargaAddKelayakanHuni([]);
+    setWargaAddBantuanDiterimaList([]);
 
     // Clear success message after 12 secs
     setTimeout(() => {
@@ -2009,6 +2212,9 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setFormPendapatanPerbulan(rec.pendapatanPerbulan);
     setFormJenisPengaduan(rec.jenisPengaduan);
     setFormJenisLayanan(rec.jenisLayanan);
+    setFormIndikatorSosialEkonomi(rec.indikatorSosialEkonomi || []);
+    setFormKelayakanHuni(rec.kelayakanHuni || []);
+    setFormBantuanDiterimaList(rec.bantuanDiterimaList || []);
 
     setActiveTab('add-record');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2405,8 +2611,26 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               headerIndices.forEach(({ key, index }) => {
                 if (index < columns.length) {
                   let val: any = columns[index].trim();
+                  // Clean surrounding quotes
+                  if (val.startsWith('"') && val.endsWith('"')) {
+                    val = val.substring(1, val.length - 1).trim();
+                  }
+
                   if (key === 'isHighPriority') {
                     val = val === 'true' || val === '1' || val === 'Ya' || val === 'true';
+                  } else if (key === 'indikatorSosialEkonomi' || key === 'kelayakanHuni' || key === 'bantuanDiterimaList') {
+                    if (val) {
+                      // Determine separator
+                      if (val.includes(';')) {
+                        val = val.split(';').map((s: string) => s.trim()).filter((s: string) => s);
+                      } else if (val.includes(',')) {
+                        val = val.split(',').map((s: string) => s.trim()).filter((s: string) => s);
+                      } else {
+                        val = [val.trim()];
+                      }
+                    } else {
+                      val = [];
+                    }
                   }
                   (rec as any)[key] = val;
                 }
@@ -2418,13 +2642,26 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               if (!rec.namaKlien) {
                 continue;
               }
+              
+              // Maintain synchronization between assistance types (list vs string format)
+              if (rec.bantuanDiterimaList && rec.bantuanDiterimaList.length > 0 && (!rec.bantuanDiterima || rec.bantuanDiterima === 'Belum Ada')) {
+                rec.bantuanDiterima = rec.bantuanDiterimaList.join(', ');
+              } else if (rec.bantuanDiterima && (!rec.bantuanDiterimaList || rec.bantuanDiterimaList.length === 0)) {
+                rec.bantuanDiterimaList = rec.bantuanDiterima.split(';').map((s: string) => s.trim()).filter((s: string) => s);
+                if (rec.bantuanDiterimaList.length === 0 && rec.bantuanDiterima !== 'Belum Ada') {
+                  rec.bantuanDiterimaList = rec.bantuanDiterima.split(',').map((s: string) => s.trim()).filter((s: string) => s);
+                }
+              }
+
               rec.namaFasilitator = rec.namaFasilitator || 'Petugas SLRT';
               rec.kecamatan = rec.kecamatan || 'Tanjungbalai Selatan';
               rec.kelurahan = rec.kelurahan || 'Indra Sakti';
               rec.hariTanggal = rec.hariTanggal || new Date().toLocaleDateString('id-ID');
               rec.statusKunjungan = (rec.statusKunjungan as any) || 'Belum Dikunjungi';
 
-              parsedRecords.push(rec as SLRTRecord);
+              // Call normalizeRecord to apply defaults, history, status and database synchronization rules
+              const normalized = normalizeRecord(rec as SLRTRecord);
+              parsedRecords.push(normalized);
             }
 
             if (parsedRecords.length === 0) {
@@ -2450,6 +2687,101 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         }
       };
     }
+  };
+
+  const handleDownloadCSVTemplate = () => {
+    const headers = [
+      "ID",
+      "Nama Klien",
+      "Kecamatan",
+      "Kelurahan",
+      "Alamat Lengkap",
+      "No Telpon",
+      "Dokumen Pendukung",
+      "Status DTKS",
+      "Pendapatan Perbulan",
+      "Status Rumah",
+      "Jenis Penerangan",
+      "Kondisi MCK",
+      "Bantuan Sudah Diperoleh",
+      "Jenis Pengaduan",
+      "Jenis Layanan",
+      "Nama Fasilitator",
+      "Hari Tanggal Input",
+      "Status Kunjungan",
+      "Tanggal Verifikasi",
+      "Catatan Pemeriksa",
+      "Indikator Sosial Ekonomi",
+      "Kelayakan Huni",
+      "Bantuan Diterima List"
+    ];
+
+    const sampleRow1 = [
+      "rec-tpl-001",
+      "Maimunah",
+      "Tanjungbalai Selatan",
+      "Indra Sakti",
+      "Jl. Masjid No. 24, Lingkungan II",
+      "081234567890",
+      "KK, KTP",
+      "Sangat Miskin",
+      "750000",
+      "Sewa Bulanan",
+      "PLN Bersubsidi 450W",
+      "MCK Umum/Tidak Layak",
+      "Belum Ada",
+      "Kurang modal usaha pedagang asongan dan jaminan KIS",
+      "PKH, PBI Jaminan Kesehatan",
+      "Ahmad Fauzi",
+      "Senin, 01 Juni 2026",
+      "Belum Dikunjungi",
+      "",
+      "",
+      "Pendapatan di bawah UMR / tidak menentu; Pekerjaan Kepala Keluarga serabutan / non-formal",
+      "Status tinggal menyewa / sewa bulanan / menumpang keluarga; MCK menumpang / umum / tidak layak",
+      "Belum Ada"
+    ];
+
+    const sampleRow2 = [
+      "rec-tpl-002",
+      "Syamsudin",
+      "Tanjungbalai Utara",
+      "Kuala Silau Bestari",
+      "Jl. Pantai Amor, Lingkungan IV",
+      "085398765432",
+      "KK",
+      "Miskin",
+      "1200000",
+      "Milik Sendiri",
+      "PLN Bersubsidi 450W",
+      "Sendiri Layak",
+      "PKH",
+      "Keluarga sakit menahun butuh rujukan RSUD",
+      "PBI Jaminan Kesehatan / KIS",
+      "Siti Rahma",
+      "Selasa, 02 Juni 2026",
+      "Sudah Dikunjungi",
+      "Kamis, 04 Juni 2026",
+      "Rumah sudah disurvei lapangan. Atap keropos layak program rutilahu.",
+      "Pendapatan di bawah UMR / tidak menentu; Anggota keluarga sakit menahun / disabilitas tanpa perawatan medik",
+      "Atap rumah bocor parah / seng keropos",
+      "PKH (Program Keluarga Harapan)"
+    ];
+
+    const csvContent = "\uFEFF" + [
+      headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','),
+      sampleRow1.map(v => `"${v.replace(/"/g, '""')}"`).join(','),
+      sampleRow2.map(v => `"${v.replace(/"/g, '""')}"`).join(',')
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "SLRT_Tanjungbalai_Template_Impor.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Seed Reset
@@ -2719,10 +3051,32 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               background: #0d5c56; 
               box-shadow: 0 4px 12px -1px rgba(15, 118, 110, 0.3);
             }
+            @page {
+              size: A4;
+              margin: 1.5cm;
+            }
             @media print {
               .btn-print { display: none; }
-              body { padding: 0; }
-              .doc-card { page-break-inside: avoid; }
+              body { 
+                padding: 0; 
+                margin: 0;
+                font-size: 10px;
+                background-color: #fff;
+                color: #000;
+              }
+              .section-title {
+                page-break-after: avoid;
+                margin-top: 15px;
+              }
+              .info-table tr, .row-fullwidth, .signatures-container {
+                page-break-inside: avoid;
+              }
+              .doc-grid {
+                page-break-inside: avoid;
+              }
+              .doc-card { 
+                page-break-inside: avoid; 
+              }
             }
           </style>
         </head>
@@ -3707,40 +4061,6 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       </div>
 
                       <div>
-                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">12. Bantuan Sudah Diperoleh</label>
-                        <div className="flex flex-col gap-2">
-                          <select
-                            value={['Belum Ada', 'PKH', 'Sembako', 'PBI'].includes(wargaAddBantuanDiterima) ? wargaAddBantuanDiterima : 'Lainnya'}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val !== 'Lainnya') {
-                                setWargaAddBantuanDiterima(val);
-                              } else {
-                                setWargaAddBantuanDiterima('');
-                              }
-                            }}
-                            className="w-full bg-white border border-slate-200 text-xs px-3 py-2.5 rounded-xl outline-none focus:border-amber-600 text-slate-805"
-                          >
-                            <option value="Belum Ada">❌ Belum Ada</option>
-                            <option value="PKH">💰 PKH (Program Keluarga Harapan)</option>
-                            <option value="Sembako">🌾 Sembako / BPNT</option>
-                            <option value="PBI">🏥 PBI (Penerima Bantuan Iuran / KIS)</option>
-                            <option value="Lainnya">✍️ Lainnya (Tulis Manual...)</option>
-                          </select>
-                          
-                          {!['Belum Ada', 'PKH', 'Sembako', 'PBI'].includes(wargaAddBantuanDiterima) && (
-                            <input
-                              type="text"
-                              placeholder="Tulis jenis bantuan yang diperoleh di sini..."
-                              value={wargaAddBantuanDiterima}
-                              onChange={(e) => setWargaAddBantuanDiterima(e.target.value)}
-                              className="w-full bg-white border border-amber-200 text-xs px-3 py-2.5 rounded-xl outline-none focus:border-amber-600 text-slate-805"
-                            />
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
                         <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">13. Status Kepemilikan Rumah</label>
                         <select
                           value={wargaAddStatusRumah}
@@ -3792,6 +4112,88 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                           className="w-full bg-white border border-slate-200 text-xs px-3 py-2.5 rounded-xl outline-none focus:border-amber-600 text-slate-800"
                         />
                       </div>
+
+                      {/* MULTI-SELECT CHECKBOXES FOR BANTUAN YANG SUDAH DIPEROLEH */}
+                      <div className="col-span-1 sm:col-span-2 md:col-span-3">
+                        <label className="text-[10px] font-black text-slate-550 block mb-1.5 uppercase tracking-wider">12. Program Bantuan Sosial yang Pernah Diterima (Pilih Semua yang Sesuai)</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-40 overflow-y-auto">
+                          {KRITERIA_BANTUAN_SOSIAL.map((bantuan) => {
+                            const isChecked = wargaAddBantuanDiterimaList.includes(bantuan);
+                            return (
+                              <label key={bantuan} className="flex items-start gap-2 text-xs font-semibold text-slate-700 cursor-pointer hover:text-slate-950 transition-colors py-1">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setWargaAddBantuanDiterimaList([...wargaAddBantuanDiterimaList, bantuan]);
+                                    } else {
+                                      setWargaAddBantuanDiterimaList(wargaAddBantuanDiterimaList.filter(b => b !== bantuan));
+                                    }
+                                  }}
+                                  className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-4 w-4 shrink-0 transition-all cursor-pointer"
+                                />
+                                <span>{bantuan}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* MULTI-SELECT CHECKBOXES FOR INDIKATOR SOSIAL EKONOMI */}
+                      <div className="col-span-1 sm:col-span-2 md:col-span-3">
+                        <label className="text-[10px] font-black text-slate-550 block mb-1.5 uppercase tracking-wider">Indikator Kerentanan Sosial Ekonomi (Pilih Semua yang Sesuai)</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-52 overflow-y-auto">
+                          {KRITERIA_SOSIAL_EKONOMI.map((kriteria) => {
+                            const isChecked = wargaAddIndikatorSosialEkonomi.includes(kriteria);
+                            return (
+                              <label key={kriteria} className="flex items-start gap-2 text-xs font-semibold text-slate-700 cursor-pointer hover:text-slate-950 transition-colors py-1">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setWargaAddIndikatorSosialEkonomi([...wargaAddIndikatorSosialEkonomi, kriteria]);
+                                    } else {
+                                      setWargaAddIndikatorSosialEkonomi(wargaAddIndikatorSosialEkonomi.filter(k => k !== kriteria));
+                                    }
+                                  }}
+                                  className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-4 w-4 shrink-0 transition-all cursor-pointer"
+                                />
+                                <span>{kriteria}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* MULTI-SELECT CHECKBOXES FOR KELAYAKAN HUNI */}
+                      <div className="col-span-1 sm:col-span-2 md:col-span-3">
+                        <label className="text-[10px] font-black text-slate-550 block mb-1.5 uppercase tracking-wider">Kondisi Fisik Hunian / Kelayakan Rumah (Pilih Semua yang Sesuai)</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-52 overflow-y-auto">
+                          {KRITERIA_KELAYAKAN_HUNI.map((kriteria) => {
+                            const isChecked = wargaAddKelayakanHuni.includes(kriteria);
+                            return (
+                              <label key={kriteria} className="flex items-start gap-2 text-xs font-semibold text-slate-700 cursor-pointer hover:text-slate-950 transition-colors py-1">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setWargaAddKelayakanHuni([...wargaAddKelayakanHuni, kriteria]);
+                                    } else {
+                                      setWargaAddKelayakanHuni(wargaAddKelayakanHuni.filter(k => k !== kriteria));
+                                    }
+                                  }}
+                                  className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-4 w-4 shrink-0 transition-all cursor-pointer"
+                                />
+                                <span>{kriteria}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+
                     </div>
                   </div>
 
@@ -4898,6 +5300,15 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   <FileSpreadsheet className="w-3 h-3 text-emerald-500 shrink-0" /> Impor CSV
                 </button>
               </div>
+              
+              <button 
+                type="button"
+                onClick={handleDownloadCSVTemplate}
+                className="w-full mt-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-850 hover:text-emerald-900 py-1.5 px-2 text-[8.5px] font-extrabold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all uppercase tracking-wider shadow-xs"
+                title="Unduh contoh template kolom CSV resmi SLRT Tanjungbalai"
+              >
+                📥 Unduh Template CSV SLRT
+              </button>
             </div>
 
             {/* Pusat Sinkronisasi Real-Time (Active Web App) */}
@@ -5236,40 +5647,6 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     </div>
 
                     <div>
-                      <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">12. Bantuan Sudah Diperoleh</label>
-                      <div className="flex flex-col gap-2">
-                        <select
-                          value={['Belum Ada', 'PKH', 'Sembako', 'PBI'].includes(formBantuanDiterima) ? formBantuanDiterima : 'Lainnya'}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            if (val !== 'Lainnya') {
-                              setFormBantuanDiterima(val);
-                            } else {
-                              setFormBantuanDiterima('');
-                            }
-                          }}
-                          className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-lg outline-none focus:border-indigo-500 text-slate-800"
-                        >
-                          <option value="Belum Ada">❌ Belum Ada</option>
-                          <option value="PKH">💰 PKH (Program Keluarga Harapan)</option>
-                          <option value="Sembako">🌾 Sembako / BPNT</option>
-                          <option value="PBI">🏥 PBI (Penerima Bantuan Iuran / KIS)</option>
-                          <option value="Lainnya">✍️ Lainnya (Tulis Manual...)</option>
-                        </select>
-                        
-                        {!['Belum Ada', 'PKH', 'Sembako', 'PBI'].includes(formBantuanDiterima) && (
-                          <input
-                            type="text"
-                            placeholder="Tulis jenis bantuan yang diperoleh di sini..."
-                            value={formBantuanDiterima}
-                            onChange={(e) => setFormBantuanDiterima(e.target.value)}
-                            className="w-full bg-white border border-indigo-200 text-xs px-3 py-2 rounded-lg outline-none focus:border-indigo-500 text-slate-800"
-                          />
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
                       <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">13. Status Kepemilikan Rumah</label>
                       <select
                         value={formStatusRumah}
@@ -5321,6 +5698,88 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                         className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-lg outline-none focus:border-indigo-500 text-slate-800"
                       />
                     </div>
+
+                    {/* ADMIN MULTI-SELECT CHECKBOXES FOR BANTUAN YANG SUDAH DIPEROLEH */}
+                    <div className="col-span-1 sm:col-span-3">
+                      <label className="text-[10px] font-black text-slate-550 block mb-1.5 uppercase tracking-wider">12. Program Bantuan Sosial yang Pernah Diterima (Pilih Semua yang Sesuai)</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-40 overflow-y-auto">
+                        {KRITERIA_BANTUAN_SOSIAL.map((bantuan) => {
+                          const isChecked = formBantuanDiterimaList.includes(bantuan);
+                          return (
+                            <label key={bantuan} className="flex items-start gap-2 text-xs font-semibold text-slate-700 cursor-pointer hover:text-indigo-650 transition-colors py-1">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormBantuanDiterimaList([...formBantuanDiterimaList, bantuan]);
+                                  } else {
+                                    setFormBantuanDiterimaList(formBantuanDiterimaList.filter(b => b !== bantuan));
+                                  }
+                                }}
+                                className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 shrink-0 transition-all cursor-pointer"
+                              />
+                              <span>{bantuan}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* ADMIN MULTI-SELECT CHECKBOXES FOR INDIKATOR SOSIAL EKONOMI */}
+                    <div className="col-span-1 sm:col-span-3">
+                      <label className="text-[10px] font-black text-slate-550 block mb-1.5 uppercase tracking-wider">Indikator Kerentanan Sosial Ekonomi (Pilih Semua yang Sesuai)</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-52 overflow-y-auto">
+                        {KRITERIA_SOSIAL_EKONOMI.map((kriteria) => {
+                          const isChecked = formIndikatorSosialEkonomi.includes(kriteria);
+                          return (
+                            <label key={kriteria} className="flex items-start gap-2 text-xs font-semibold text-slate-700 cursor-pointer hover:text-indigo-650 transition-colors py-1">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormIndikatorSosialEkonomi([...formIndikatorSosialEkonomi, kriteria]);
+                                  } else {
+                                    setFormIndikatorSosialEkonomi(formIndikatorSosialEkonomi.filter(k => k !== kriteria));
+                                  }
+                                }}
+                                className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 shrink-0 transition-all cursor-pointer"
+                              />
+                              <span>{kriteria}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* ADMIN MULTI-SELECT CHECKBOXES FOR KELAYAKAN HUNI */}
+                    <div className="col-span-1 sm:col-span-3">
+                      <label className="text-[10px] font-black text-slate-550 block mb-1.5 uppercase tracking-wider">Kondisi Fisik Hunian / Kelayakan Rumah (Pilih Semua yang Sesuai)</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-52 overflow-y-auto">
+                        {KRITERIA_KELAYAKAN_HUNI.map((kriteria) => {
+                          const isChecked = formKelayakanHuni.includes(kriteria);
+                          return (
+                            <label key={kriteria} className="flex items-start gap-2 text-xs font-semibold text-slate-700 cursor-pointer hover:text-indigo-650 transition-colors py-1">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormKelayakanHuni([...formKelayakanHuni, kriteria]);
+                                  } else {
+                                    setFormKelayakanHuni(formKelayakanHuni.filter(k => k !== kriteria));
+                                  }
+                                }}
+                                className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 shrink-0 transition-all cursor-pointer"
+                              />
+                              <span>{kriteria}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                   </div>
                 </div>
 

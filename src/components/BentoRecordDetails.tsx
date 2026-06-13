@@ -366,6 +366,35 @@ export default function BentoRecordDetails({
               </span>
             </div>
           </div>
+
+          {/* Display multi-selected indicators if present */}
+          {rec.indikatorSosialEkonomi && rec.indikatorSosialEkonomi.length > 0 && (
+            <div className="mt-3.5 pt-3 border-t border-slate-150/50">
+              <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest block mb-1.5">Indikator Kerentanan Sosial:</span>
+              <div className="flex flex-col gap-1.5">
+                {rec.indikatorSosialEkonomi.map((kriteria, idx) => (
+                  <div key={idx} className="flex items-start gap-1.5 text-[11px] text-rose-700 font-bold bg-rose-50 px-2 py-1.5 rounded-lg border border-rose-100/40">
+                    <span className="mt-0.5">⚠️</span>
+                    <span className="leading-tight">{kriteria}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {rec.kelayakanHuni && rec.kelayakanHuni.length > 0 && (
+            <div className="mt-3.5 pt-3 border-t border-slate-150/50">
+              <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest block mb-1.5 font-sans">Kondisi Kerusakan Rumah:</span>
+              <div className="flex flex-col gap-1.5">
+                {rec.kelayakanHuni.map((kriteria, idx) => (
+                  <div key={idx} className="flex items-start gap-1.5 text-[11px] text-amber-700 font-bold bg-amber-50 px-2 py-1.5 rounded-lg border border-amber-100/40 font-sans">
+                    <span className="mt-0.5">🏚️</span>
+                    <span className="leading-tight">{kriteria}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-6 pt-4 border-t border-slate-100">
@@ -493,6 +522,74 @@ export default function BentoRecordDetails({
           )}
           <span>{copiedRecordId === 'list' ? 'Format Tersalin!' : 'Salin 18-Format List'}</span>
         </button>
+      </div>
+
+      {/* CARD 7: TIMELINE STATUS HISTORY LOG (Col Span 3) */}
+      <div id="bento-status-history" className="col-span-1 md:col-span-3 bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm">
+        <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+          <Clock className="w-4 h-4 text-indigo-650" />
+          <h4 className="font-black text-xs text-slate-800 uppercase tracking-wider">
+            Log Riwayat Status &amp; Alur Proses Registrasi
+          </h4>
+        </div>
+        <div className="relative border-l border-slate-200 ml-4 pl-6 space-y-5">
+          {rec.statusHistory && rec.statusHistory.length > 0 ? (
+            rec.statusHistory.map((step, idx) => {
+              const isCreated = step.status === 'Dibuat';
+              const isAssigned = step.status === 'Ditugaskan';
+              const isVerified = step.status === 'Diverifikasi';
+              
+              let markerBg = 'bg-slate-250 text-slate-600';
+              let borderCol = 'border-slate-300';
+              let badgeColor = 'bg-slate-100 text-slate-800';
+              if (isCreated) {
+                markerBg = 'bg-blue-500 text-white';
+                borderCol = 'border-blue-500';
+                badgeColor = 'bg-blue-105 text-blue-800';
+              } else if (isAssigned) {
+                markerBg = 'bg-indigo-500 text-white';
+                borderCol = 'border-indigo-500';
+                badgeColor = 'bg-indigo-105 text-indigo-800';
+              } else if (isVerified) {
+                markerBg = 'bg-emerald-500 text-white';
+                borderCol = 'border-emerald-500';
+                badgeColor = 'bg-emerald-105 text-emerald-800';
+              }
+
+              return (
+                <div key={idx} className="relative group">
+                  {/* Timeline bullet icon marker */}
+                  <div className={`absolute -left-[31px] top-1.5 w-5 h-5 rounded-full border-2 ${borderCol} ${markerBg} flex items-center justify-center text-[10px] font-bold shadow-xs z-10 transition-transform duration-300 group-hover:scale-110`}>
+                    {isCreated && '📝'}
+                    {isAssigned && '👤'}
+                    {isVerified && '✓'}
+                    {!isCreated && !isAssigned && !isVerified && '•'}
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-md uppercase tracking-wider ${badgeColor}`}>
+                        {step.status}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-bold">{step.timestamp}</span>
+                    </div>
+                    <span className="text-[10px] text-indigo-650 bg-indigo-50 py-0.5 px-2 rounded-lg font-bold">
+                      Oleh: {step.updatedBy || 'Sistem'}
+                    </span>
+                  </div>
+                  
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed mt-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100/80">
+                    {step.note || 'Status diproses tanpa catatan tambahan.'}
+                  </p>
+                </div>
+              );
+            })
+          ) : (
+            <div className="text-xs text-slate-400 italic py-2 pl-2">
+              Tidak ada log riwayat status yang sah untuk laporan aduan ini.
+            </div>
+          )}
+        </div>
       </div>
 
       {/* DETAILED HIDDEN LIST PREVIEW LOG */}

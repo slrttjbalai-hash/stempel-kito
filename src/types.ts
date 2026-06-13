@@ -35,6 +35,19 @@ export interface SLRTRecord {
   foto_hunian_url?: string;
   foto_ktp_url?: string;
   catatan_pendata?: string;
+
+  // New fields for multi-select
+  indikatorSosialEkonomi?: string[];
+  kelayakanHuni?: string[];
+  bantuanDiterimaList?: string[];
+
+  // Status History Log
+  statusHistory?: {
+    status: string;
+    timestamp: string;
+    note?: string;
+    updatedBy?: string;
+  }[];
 }
 
 export const TANJUNGBALAI_LOCATIONS: { [kecamatan: string]: string[] } = {
@@ -241,5 +254,35 @@ export const getSafeBase64Url = (srcUrl: string | undefined): string => {
   }
   return `data:image/jpeg;base64,${trimmed}`;
 };
+
+export const KRITERIA_SOSIAL_EKONOMI = [
+  "Pendapatan di bawah UMR / tidak menentu",
+  "Pengeluaran didominasi untuk pangan pokok",
+  "Pekerjaan Kepala Keluarga serabutan / non-formal",
+  "Kepala Keluarga janda / lansia / disabilitas",
+  "Tanggungan anak sekolah aktif > 2 orang",
+  "Tidak memiliki tabungan / aset berharga",
+  "Pernah menahan lapar karena kendala ekonomi Berkelanjutan",
+  "Tidak memiliki jaminan kesehatan mandiri"
+];
+
+export const KRITERIA_KELAYAKAN_HUNI = [
+  "Kepadatan hunian tinggi (< 8m² per orang)",
+  "Dinding berbahan papan lapuk / seng / bambu",
+  "Atap rumah bocor parah / seng keropos",
+  "Lantai bermaterial tanah atau semen retak kasar",
+  "Akses air bersih bersumber dari air hujan / sumur keruh",
+  "MCK menumpang / umum / tidak layak",
+  "Penerangan meminjam tetangga / PLN subsidi numpang",
+  "Status tinggal menyewa / sewa bulanan / menumpang keluarga"
+];
+
+export const KRITERIA_BANTUAN_SOSIAL = [
+  "PKH (Program Keluarga Harapan)",
+  "BPNT / Sembako",
+  "KIS PBI APBD Kota / BPJS PBI",
+  "KIP / Beasiswa PIP",
+  "BLT (Bantuan Langsung Tunai / Dana Desa)"
+];
 
 
