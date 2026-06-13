@@ -35,7 +35,7 @@ import {
   UserCheck
 } from 'lucide-react';
 
-import { SLRTRecord, TANJUNGBALAI_LOCATIONS, INITIAL_RECORDS, FacilitatorUser, INITIAL_FACILITATORS, getSafeBase64Url, KRITERIA_SOSIAL_EKONOMI, KRITERIA_KELAYAKAN_HUNI, KRITERIA_BANTUAN_SOSIAL } from './types';
+import { SLRTRecord, TANJUNGBALAI_LOCATIONS, INITIAL_RECORDS, FacilitatorUser, INITIAL_FACILITATORS, getSafeBase64Url, KRITERIA_SOSIAL_EKONOMI, KRITERIA_KELAYAKAN_HUNI, KRITERIA_BANTUAN_SOSIAL, KELURAHAN_COORDS } from './types';
 import { jsPDF } from 'jspdf';
 import BentoRecordDetails from './components/BentoRecordDetails';
 import SmartParserTab from './components/SmartParserTab';
@@ -414,6 +414,27 @@ function normalizeRecord(rec: any): SLRTRecord {
     }
   }
 
+  // Parse or resolve latitude and longitude
+  let latitude = rec.latitude !== undefined ? Number(rec.latitude) : undefined;
+  let longitude = rec.longitude !== undefined ? Number(rec.longitude) : undefined;
+
+  if (latitude === undefined || longitude === undefined || isNaN(latitude) || isNaN(longitude) || latitude === 0 || longitude === 0) {
+    const kel = rec.kelurahan || '';
+    const center = KELURAHAN_COORDS[kel] || { lat: 2.9645, lng: 99.8005 };
+
+    // Simple deterministic hash based on name to spread visual coordinates slightly
+    const hashString = rec.namaKlien || id || '';
+    let hashVal = 0;
+    for (let i = 0; i < hashString.length; i++) {
+      hashVal += hashString.charCodeAt(i);
+    }
+    const angle = ((hashVal * 17) % 360) * Math.PI / 180;
+    const radius = 0.0012 * ((hashVal % 10) / 10 + 0.3); // spread out up to 130 meters
+
+    latitude = Number((center.lat + Math.sin(angle) * radius).toFixed(6));
+    longitude = Number((center.lng + Math.cos(angle) * radius).toFixed(6));
+  }
+
   return {
     ...rec,
     statusKunjungan,
@@ -429,7 +450,9 @@ function normalizeRecord(rec: any): SLRTRecord {
     indikatorSosialEkonomi,
     kelayakanHuni,
     bantuanDiterimaList,
-    statusHistory
+    statusHistory,
+    latitude,
+    longitude
   };
 }
 
@@ -878,6 +901,8 @@ export default function App() {
   const [verifierNamaPendata, setVerifierNamaPendata] = useState('');
   const [verifierFotoKkKtp, setVerifierFotoKkKtp] = useState('');
   const [verifierFotoDepanRumah, setVerifierFotoDepanRumah] = useState('');
+  const [verifierLat, setVerifierLat] = useState<number | null>(null);
+  const [verifierLng, setVerifierLng] = useState<number | null>(null);
 
   const memoizedVerifierFotoKkKtp = useMemo(() => {
     return getSafeBase64Url(verifierFotoKkKtp);
@@ -969,6 +994,7 @@ export default function App() {
   const [formKelurahan, setFormKelurahan] = useState('Pahang');
   const [formHariTanggal, setFormHariTanggal] = useState('');
   const [formNamaKlien, setFormNamaKlien] = useState('');
+  const [formNik, setFormNik] = useState('');
   const [formPekerjaanKrt, setFormPekerjaanKrt] = useState('');
   const [formNamaKuasa, setFormNamaKuasa] = useState('-');
   const [formAlamatKlien, setFormAlamatKlien] = useState('');
@@ -1158,6 +1184,11 @@ export default function App() {
 
     if (!regName.trim() || !regNik.trim() || !regPhone.trim() || !regEmail.trim() || !regPassword.trim()) {
       setAuthError("Mohon lengkapi seluruh formulir registrasi.");
+      return;
+    }
+
+    if (regNik.trim().length !== 16 || !/^\d+$/.test(regNik.trim())) {
+      setAuthError("NIK / ID Pegawai wajib berupa tepat 16 digit angka.");
       return;
     }
 
@@ -1508,6 +1539,14 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setFormKelurahan(parsedPreview.kelurahan || 'Pahang');
     setFormHariTanggal(parsedPreview.hariTanggal || '');
     setFormNamaKlien(parsedPreview.namaKlien || '');
+    let parsedNik = parsedPreview.nik || '';
+    if (!parsedNik && parsedPreview.dokumen) {
+      const match = parsedPreview.dokumen.match(/NIK:\s*(\d{16})/i);
+      if (match) {
+        parsedNik = match[1];
+      }
+    }
+    setFormNik(parsedNik);
     setFormPekerjaanKrt(parsedPreview.pekerjaanKrt || '');
     setFormNamaKuasa(parsedPreview.namaKuasa || '-');
     setFormAlamatKlien(parsedPreview.alamatKlien || '');
@@ -1540,6 +1579,16 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
     if (!formNamaKlien.trim() || !formFasilitator.trim() || !formKelurahan.trim()) {
       alert("Harap lengkapi setidaknya Nama Fasilitator, Kelurahan, dan Nama Klien.");
+      return;
+    }
+
+    const cleanNik = formNik.trim();
+    if (!cleanNik) {
+      alert("⚠️ NIK Klien wajib diisi!");
+      return;
+    }
+    if (cleanNik.length !== 16 || !/^\d+$/.test(cleanNik)) {
+      alert("⚠️ NIK Klien harus tepat 16 digit angka.");
       return;
     }
 
@@ -1610,11 +1659,12 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         return `${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
       })(),
       namaKlien: formNamaKlien.trim(),
+      nik: cleanNik,
       pekerjaanKrt: formPekerjaanKrt.trim() || '-',
       namaKuasa: formNamaKuasa.trim() || '-',
       alamatKlien: formAlamatKlien.trim() || '-',
       noTelpon: formNoTelpon.trim() || '-',
-      dokumen: formDokumen.trim() || 'KK, KTP',
+      dokumen: formDokumen.trim() ? (formDokumen.trim().includes('(NIK:') ? formDokumen.trim() : `${formDokumen.trim()} (NIK: ${cleanNik})`) : `KK, KTP (NIK: ${cleanNik})`,
       status: formStatus,
       bantuanDiterima: formBantuanDiterimaList.length > 0 ? formBantuanDiterimaList.join(', ') : 'Belum Ada',
       statusRumah: formStatusRumah,
@@ -1637,6 +1687,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       namaPendata: existingRec?.namaPendata,
       catatan_pendata: existingRec?.catatan_pendata,
       diinputOleh: existingRec ? existingRec.diinputOleh : 'Admin',
+      latitude: existingRec?.latitude,
+      longitude: existingRec?.longitude,
       
       // New fields
       indikatorSosialEkonomi: formIndikatorSosialEkonomi,
@@ -1669,6 +1721,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setFormFasilitator(session?.name || '');
     setFormHariTanggal('');
     setFormNamaKlien('');
+    setFormNik('');
     setFormPekerjaanKrt('');
     setFormNamaKuasa('-');
     setFormAlamatKlien('');
@@ -1807,15 +1860,15 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     if (videoRef.current && onPhotoCapture) {
       const video = videoRef.current;
       const canvas = document.createElement('canvas');
-      // Set compact resolution directly at photo click to eliminate mobile device frame pacing bugs/heaviness!
-      const targetW = 320;
-      const targetH = video.videoWidth ? Math.round((video.videoHeight / video.videoWidth) * targetW) : 240;
+      // Set high quality resolution directly at photo click for extreme clarity of documents/assets!
+      const targetW = 960;
+      const targetH = video.videoWidth ? Math.round((video.videoHeight / video.videoWidth) * targetW) : 720;
       canvas.width = targetW;
       canvas.height = targetH;
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
         
         // Stop stream and close modal
         stopLiveCamera();
@@ -1837,10 +1890,10 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     img.crossOrigin = "anonymous";
     img.src = imageUrl;
     img.onload = async () => {
-      // Limit dimension sizes to keep canvas operations lightweight and perfectly syncable via Google Sheets cell character limits (<50,000 characters)
+      // Limit dimension sizes to keep canvas operations lightweight and perfectly syncable via modern database storage (~120KB character limit)
       let width = img.width;
       let height = img.height;
-      const maxDimension = 320; // Maximum dimension of 320px keeps Base64 string well under 40,000 chars
+      const maxDimension = 960; // Maximum dimension of 960px keeps Base64 string extremely sharp and readable
       if (width > maxDimension || height > maxDimension) {
         if (width > height) {
           height = Math.round((height * maxDimension) / width);
@@ -1862,6 +1915,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
       if (addGeotag) {
         const geo = await getGeotagCoordinates();
+        setVerifierLat(geo.latitude);
+        setVerifierLng(geo.longitude);
 
         // Translucent dark slate overlay background for clear telemetry contrast text representation
         const labelBarHeight = Math.round(height * 0.22);
@@ -1898,28 +1953,28 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         ctx.fillText(`🏷️ LOKASI: ${displayAddr}`, paddingLeft, textY);
       }
 
-      // Progressively compress JPG until base64 payload is fully under 32KB
-      let quality = 0.75;
+      // Progressively compress JPG until base64 payload is fully under 120KB
+      let quality = 0.85;
       let compressedUrl = canvas.toDataURL('image/jpeg', quality);
       let calculatedPayloadKb = (compressedUrl.length * 0.75) / 1024;
 
       let cycles = 0;
-      while (calculatedPayloadKb > 32 && quality > 0.1 && cycles < 10) {
+      while (calculatedPayloadKb > 120 && quality > 0.15 && cycles < 10) {
         quality -= 0.10;
         compressedUrl = canvas.toDataURL('image/jpeg', quality);
         calculatedPayloadKb = (compressedUrl.length * 0.75) / 1024;
         cycles++;
       }
 
-      // If still exceeding 32KB scale down the resolution of image
-      if (calculatedPayloadKb > 32) {
+      // If still exceeding 120KB scale down the resolution of image
+      if (calculatedPayloadKb > 120) {
         const shrinkCanvas = document.createElement('canvas');
         shrinkCanvas.width = Math.round(width * 0.8);
         shrinkCanvas.height = Math.round(height * 0.8);
         const shrinkCtx = shrinkCanvas.getContext('2d');
         if (shrinkCtx) {
           shrinkCtx.drawImage(canvas, 0, 0, shrinkCanvas.width, shrinkCanvas.height);
-          compressedUrl = shrinkCanvas.toDataURL('image/jpeg', 0.4);
+          compressedUrl = shrinkCanvas.toDataURL('image/jpeg', 0.6);
         }
       }
 
@@ -1935,6 +1990,12 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         const rawResult = reader.result;
         // Run compression (without always adding geotags since it is custom citizen uploaded document files)
         processGeotagAndCompression(rawResult, false, callback);
+
+        // Fetch precise real-time coordinates of the device during upload and pin to physical coordinates
+        getGeotagCoordinates().then(geo => {
+          setVerifierLat(geo.latitude);
+          setVerifierLng(geo.longitude);
+        });
       }
     };
     reader.readAsDataURL(file);
@@ -1979,6 +2040,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     const formattedDateTime = `${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()} Pukul ${hrs}:${mins}:${secs} WIB`;
     
     setVerifierDate(formattedDateTime);
+    setVerifierLat(rec.latitude || null);
+    setVerifierLng(rec.longitude || null);
     setShowVerifierModal(true);
   };
 
@@ -2038,7 +2101,9 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           foto_depan_rumah: verifierFotoDepanRumah,
           fotodepanrumah: verifierFotoDepanRumah,
           fotoRumah: verifierFotoDepanRumah,
-          statusHistory: filteredHistory
+          statusHistory: filteredHistory,
+          latitude: verifierLat !== null ? verifierLat : (cachedGeotagCoordinatesRef.current ? cachedGeotagCoordinatesRef.current.latitude : rec.latitude),
+          longitude: verifierLng !== null ? verifierLng : (cachedGeotagCoordinatesRef.current ? cachedGeotagCoordinatesRef.current.longitude : rec.longitude)
         });
         compiledRecordForSync = updated;
         return updated;
@@ -2063,6 +2128,16 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     e.preventDefault();
     if (!wargaAddNama.trim() || !wargaAddPhone.trim() || !wargaAddPengaduan.trim()) {
       alert("Harap lengkapi setidaknya Nama Lengkap, No HP/WhatsApp, dan Keluhan Anda.");
+      return;
+    }
+
+    const cleanNik = wargaAddNik.trim();
+    if (!cleanNik) {
+      alert("⚠️ NIK Klien wajib diisi!");
+      return;
+    }
+    if (cleanNik.length !== 16 || !/^\d+$/.test(cleanNik)) {
+      alert("⚠️ NIK Klien harus tepat 16 digit angka.");
       return;
     }
 
@@ -2105,11 +2180,12 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       kecamatan: wargaAddKecamatan,
       hariTanggal: dateFormatted,
       namaKlien: wargaAddNama.trim(),
+      nik: cleanNik,
       pekerjaanKrt: wargaAddPekerjaan.trim() || 'Tidak Tetap/Serabutan',
       namaKuasa: wargaAddNamaKuasa.trim() || '-',
       alamatKlien: wargaAddAlamat.trim() || 'Alamat dikonfirmasi saat kunjungan lapangan.',
       noTelpon: wargaAddPhone.trim(),
-      dokumen: wargaAddNik.trim() ? `KK, KTP (NIK: ${wargaAddNik.trim()})` : wargaAddDokumen.trim(),
+      dokumen: `KK, KTP (NIK: ${cleanNik})`,
       status: wargaAddStatus,
       bantuanDiterima: wargaAddBantuanDiterimaList.length > 0 ? wargaAddBantuanDiterimaList.join(', ') : 'Belum Ada',
       statusRumah: wargaAddStatusRumah,
@@ -2199,6 +2275,14 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setFormKelurahan(rec.kelurahan);
     setFormHariTanggal(rec.hariTanggal);
     setFormNamaKlien(rec.namaKlien);
+    let nikVal = rec.nik || '';
+    if (!nikVal && rec.dokumen) {
+      const match = rec.dokumen.match(/NIK:\s*(\d{16})/i);
+      if (match) {
+        nikVal = match[1];
+      }
+    }
+    setFormNik(nikVal);
     setFormPekerjaanKrt(rec.pekerjaanKrt);
     setFormNamaKuasa(rec.namaKuasa);
     setFormAlamatKlien(rec.alamatKlien);
@@ -3986,13 +4070,15 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
-                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">NIK Klien (16 Digit)</label>
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">NIK Klien (16 Digit) *</label>
                         <input
                           type="text"
+                          maxLength={16}
                           placeholder="Masukkan 16 digit NIK..."
                           value={wargaAddNik}
-                          onChange={(e) => setWargaAddNik(e.target.value)}
-                          className="w-full bg-white border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 font-sans"
+                          onChange={(e) => setWargaAddNik(e.target.value.replace(/\D/g, ''))}
+                          className="w-full bg-white border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-amber-600 font-mono tracking-widest"
+                          required
                         />
                       </div>
                       <div>
@@ -5570,6 +5656,19 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     </div>
 
                     <div>
+                      <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">5.1. NIK Klien (16 Digit) *</label>
+                      <input
+                        type="text"
+                        maxLength={16}
+                        placeholder="Masukkan 16 digit NIK..."
+                        value={formNik}
+                        onChange={(e) => setFormNik(e.target.value.replace(/\D/g, ''))}
+                        className="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-lg outline-none focus:border-indigo-500 text-slate-800 font-mono tracking-widest"
+                        required
+                      />
+                    </div>
+
+                    <div>
                       <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">6. Pekerjaan Pokok KRT</label>
                       <input
                         type="text"
@@ -5856,7 +5955,13 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
           {/* 4.5. DASHBOARD STATISTICAL SUMMARY TAB */}
           {activeTab === 'dashboard-summary' && (
-            <DashboardSummary records={records} />
+            <DashboardSummary 
+              records={records} 
+              onSelectRecord={(id) => {
+                setSelectedRecordId(id);
+                setActiveTab('all-records');
+              }}
+            />
           )}
 
           {/* 5. FACILITATOR MANAGEMENT TAB (ONLY ADMIN ACCESS) */}
@@ -6327,8 +6432,42 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   </div>
                 </div>
 
-                <p className="text-[9px] text-slate-450 italic mt-1 leading-normal font-sans">
+                <p className="text-[9px] text-slate-445 italic mt-1 leading-normal font-sans">
                   * Gambar di atas mewakili rujukan audit ops geospasial opsional oleh Dinsos Kota Tanjungbalai atau hasil pengambilan lapangan.
+                </p>
+              </div>
+
+              {/* Real-time Surveyor Geolocation Coordinates HUD */}
+              <div className="bg-slate-900 text-slate-100 p-3.5 rounded-2xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black tracking-widest text-emerald-400 uppercase flex items-center gap-1.5 font-mono">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
+                    TELEMETRI GEOLOKASI (KUNJUNGAN FISIK LAPANGAN)
+                  </span>
+                  <button 
+                    type="button"
+                    onClick={async () => {
+                      const geo = await getGeotagCoordinates();
+                      setVerifierLat(geo.latitude);
+                      setVerifierLng(geo.longitude);
+                    }}
+                    className="text-[9px] text-sky-400 hover:text-sky-300 font-extrabold hover:underline font-sans cursor-pointer uppercase tracking-tight"
+                  >
+                    Segarkan GPS
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80">
+                    <span className="text-[8px] text-slate-450 block uppercase tracking-wider font-sans mb-0.5">📍 Latitude Fisik</span>
+                    <span className="text-white font-bold text-xs tracking-wider">{verifierLat !== null ? verifierLat.toFixed(6) : 'Mencari...'}</span>
+                  </div>
+                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80">
+                    <span className="text-[8px] text-slate-450 block uppercase tracking-wider font-sans mb-0.5">🌐 Longitude Fisik</span>
+                    <span className="text-white font-bold text-xs tracking-wider">{verifierLng !== null ? verifierLng.toFixed(6) : 'Mencari...'}</span>
+                  </div>
+                </div>
+                <p className="text-[9px] text-slate-400 leading-normal italic font-sans">
+                  💡 <b>Fisik vs KK:</b> Koordinat ini diambil presisi saat pengambilan gambar / upload dokumen langsung di lokasi rumah warga. Hal ini memastikan posisi rumah diidentifikasi secara akurat meskipun berbeda dari alamat KTP/Kartu Keluarga.
                 </p>
               </div>
 

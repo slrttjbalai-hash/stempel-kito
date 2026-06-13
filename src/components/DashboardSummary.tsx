@@ -25,12 +25,14 @@ import {
   PieChart as PieIcon, 
   Map
 } from 'lucide-react';
+import GeotagHeatmapMap from './GeotagHeatmapMap';
 
 interface DashboardSummaryProps {
   records: SLRTRecord[];
+  onSelectRecord?: (recordId: string) => void;
 }
 
-export default function DashboardSummary({ records }: DashboardSummaryProps) {
+export default function DashboardSummary({ records, onSelectRecord }: DashboardSummaryProps) {
   // 1. Calculate General Metrics
   const metrics = useMemo(() => {
     const total = records.length;
@@ -556,6 +558,9 @@ export default function DashboardSummary({ records }: DashboardSummaryProps) {
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Map Heatmap of Incoming complaints with captured coordinate Geotags */}
+      <GeotagHeatmapMap records={records} onSelectRecord={onSelectRecord} />
 
       {/* Grid Row Breakdown list by Kelurahan & Percentage coverage */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">

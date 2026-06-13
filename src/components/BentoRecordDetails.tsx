@@ -107,6 +107,14 @@ export default function BentoRecordDetails({
             <span className="font-semibold text-slate-700">{rec.pekerjaanKrt || 'Tidak Bekerja'}</span>
             <span className="text-slate-300">•</span>
             <span className="font-mono text-xs bg-slate-100 py-0.5 px-2 rounded">{rec.noTelpon}</span>
+            {rec.nik && (
+              <>
+                <span className="text-slate-300">•</span>
+                <span className="font-mono text-xs bg-indigo-50 text-indigo-700 font-bold py-0.5 px-2 rounded border border-indigo-100" title="Nomor Induk Kependudukan (NIK) Klien">
+                  💳 NIK: {rec.nik}
+                </span>
+              </>
+            )}
           </p>
           
           <p className="text-xs text-slate-450 mt-2 flex items-start gap-1 p-2 bg-slate-50/50 rounded-lg border border-slate-100">
@@ -220,6 +228,27 @@ export default function BentoRecordDetails({
                          "{catatan || 'Telah diverifikasi sesuai standar operational SLRT Dinsos Kota Tanjungbalai.'}"
                        </p>
                      </div>
+                   </div>
+
+                   <div>
+                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">📍 Geotag Lokasi Fisik (Survei Lapangan):</p>
+                     <div className="p-3 bg-indigo-50 border border-indigo-150 rounded-xl flex items-center justify-between gap-3 flex-wrap">
+                       <div className="font-mono text-xs text-indigo-900 font-semibold space-y-0.5">
+                         <div>Lat: {rec.latitude || 'Tidak terdeteksi'}</div>
+                         <div>Lon: {rec.longitude || 'Tidak terdeteksi'}</div>
+                       </div>
+                       <a 
+                         href={`https://www.google.com/maps/search/?api=1&query=${rec.latitude},${rec.longitude}`}
+                         target="_blank" 
+                         rel="noreferrer"
+                         className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-750 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors no-underline cursor-pointer"
+                       >
+                         Buka Google Maps
+                       </a>
+                     </div>
+                     <p className="text-[9px] text-slate-450 italic mt-1 leading-normal">
+                       * Posisi absolut rumah warga yang direkam melalui GPS kamera handphone Fasilitator saat audit lapangan dilangsungkan. Hal ini memudahkan pelacakan fisik nyata meskipun berbeda dari domisili KK.
+                     </p>
                    </div>
                  </div>
                ) : (

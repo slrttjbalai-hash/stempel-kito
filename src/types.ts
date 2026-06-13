@@ -41,6 +41,13 @@ export interface SLRTRecord {
   kelayakanHuni?: string[];
   bantuanDiterimaList?: string[];
 
+  // Geotagging GPS coordinates
+  latitude?: number;
+  longitude?: number;
+
+  // NIK Klien (16 Digit)
+  nik?: string;
+
   // Status History Log
   statusHistory?: {
     status: string;
@@ -284,5 +291,51 @@ export const KRITERIA_BANTUAN_SOSIAL = [
   "KIP / Beasiswa PIP",
   "BLT (Bantuan Langsung Tunai / Dana Desa)"
 ];
+
+export const KELURAHAN_COORDS: Record<string, { lat: number; lng: number }> = {
+  // Tanjungbalai Selatan
+  'Indra Sakti': { lat: 2.9642, lng: 99.8001 },
+  'Karya': { lat: 2.9612, lng: 99.8015 },
+  'Perwira': { lat: 2.9658, lng: 99.8032 },
+  'Pantai Burung': { lat: 2.9585, lng: 99.8012 },
+  'Tanjungbalai Kota I': { lat: 2.9631, lng: 99.7995 },
+  'Tanjungbalai Kota II': { lat: 2.9655, lng: 99.7978 },
+
+  // Tanjungbalai Utara
+  'Matahalasan': { lat: 2.9735, lng: 99.8055 },
+  'Sejahtera': { lat: 2.9721, lng: 99.8082 },
+  'Kuala Silo Bestari': { lat: 2.9785, lng: 99.8095 },
+  'Kuala Silau Bestari': { lat: 2.9785, lng: 99.8095 },
+  'Tanjungbalai Kota III': { lat: 2.9695, lng: 99.8012 },
+  'Tanjungbalai Kota IV': { lat: 2.9712, lng: 99.7995 },
+
+  // Sei Tualang Raso
+  'Keramat Kubah': { lat: 2.9855, lng: 99.8032 },
+  'Muara Sentosa': { lat: 2.9922, lng: 99.7995 },
+  'Pasar Baru': { lat: 2.9815, lng: 99.8015 },
+  'Sei Raja': { lat: 2.9882, lng: 99.8075 },
+  'Sumber Sari': { lat: 2.9792, lng: 99.8035 },
+
+  // Teluk Nibung
+  'Beting Kuala Kapias': { lat: 2.9895, lng: 99.8255 },
+  'Kapias Pulau Buaya': { lat: 2.9995, lng: 99.8212 },
+  'Pematang Pasir': { lat: 2.9799, lng: 99.8285 },
+  'Perjuangan': { lat: 2.9862, lng: 99.8212 },
+  'Sei Merbau': { lat: 2.9912, lng: 99.8155 },
+
+  // Datuk Bandar
+  'Gading': { lat: 2.9465, lng: 99.7825 },
+  'Pahang': { lat: 2.9565, lng: 99.7895 },
+  'Sijambi': { lat: 2.9412, lng: 99.7752 },
+  'Sirantau': { lat: 2.9495, lng: 99.7925 },
+  'Pantai Johor': { lat: 2.9515, lng: 99.7992 },
+
+  // Datuk Bandar Timur
+  'Bunga Tanjung': { lat: 2.9585, lng: 99.8145 },
+  'Pulau Simardan': { lat: 2.9642, lng: 99.8185 },
+  'Selat Tanjung Medan': { lat: 2.9492, lng: 99.8315 },
+  'Semula Jadi': { lat: 2.9535, lng: 99.8215 },
+  'Selat Lancang': { lat: 2.9415, lng: 99.8122 }
+};
 
 
