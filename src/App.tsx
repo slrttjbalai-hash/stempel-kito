@@ -581,12 +581,28 @@ export default function App() {
     try {
       const deletedIds = JSON.parse(deletedIdsString);
       if (Array.isArray(deletedIds) && deletedIds.length > 0) {
-        loaded = loaded.filter(rec => !deletedIds.includes(rec.id) && !rec.isDeleted && (rec as any).isDeleted !== 'true');
+        loaded = loaded.filter(rec => 
+          !deletedIds.includes(rec.id) && 
+          !rec.isDeleted && 
+          (rec as any).isDeleted !== 'true' && 
+          rec.statusKunjungan !== 'Dihapus' && 
+          rec.statusKunjungan !== 'DELETED'
+        );
       } else {
-        loaded = loaded.filter(rec => !rec.isDeleted && (rec as any).isDeleted !== 'true');
+        loaded = loaded.filter(rec => 
+          !rec.isDeleted && 
+          (rec as any).isDeleted !== 'true' && 
+          rec.statusKunjungan !== 'Dihapus' && 
+          rec.statusKunjungan !== 'DELETED'
+        );
       }
     } catch (e) {
-      loaded = loaded.filter(rec => !rec.isDeleted && (rec as any).isDeleted !== 'true');
+      loaded = loaded.filter(rec => 
+        !rec.isDeleted && 
+        (rec as any).isDeleted !== 'true' && 
+        rec.statusKunjungan !== 'Dihapus' && 
+        rec.statusKunjungan !== 'DELETED'
+      );
     }
     return mergeRecordsWithOverrides(loaded.map(normalizeRecord));
   });
@@ -764,7 +780,11 @@ export default function App() {
           } catch (e) {}
 
           const filtered = json.records.filter((rec: any) => {
-            return !deletedIds.includes(rec.id) && !rec.isDeleted && rec.isDeleted !== 'true';
+            return !deletedIds.includes(rec.id) && 
+                   !rec.isDeleted && 
+                   rec.isDeleted !== 'true' && 
+                   rec.statusKunjungan !== 'Dihapus' && 
+                   rec.statusKunjungan !== 'DELETED';
           });
           const normalized = filtered.map(normalizeRecord);
 
@@ -999,7 +1019,7 @@ export default function App() {
   const [filterBulanBerjalan, setFilterBulanBerjalan] = useState(false);
 
   // Selected Record state
-  const [selectedRecordId, setSelectedRecordId] = useState<string | null>('rec-1');
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
 
   // Google Sheets integration helper state
   const [syncingRecordId, setSyncingRecordId] = useState<string | null>(null);
@@ -1174,7 +1194,11 @@ export default function App() {
           } catch (e) {}
 
           const filtered = json.records.filter((rec: any) => {
-            return !deletedIds.includes(rec.id) && !rec.isDeleted && rec.isDeleted !== 'true';
+            return !deletedIds.includes(rec.id) && 
+                   !rec.isDeleted && 
+                   rec.isDeleted !== 'true' && 
+                   rec.statusKunjungan !== 'Dihapus' && 
+                   rec.statusKunjungan !== 'DELETED';
           });
           const normalized = filtered.map(normalizeRecord);
           const merged = mergeRecordsWithOverrides(normalized);
@@ -2236,7 +2260,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     const activeFacilitatingStaff = facilitators.filter(f => f.status === 'APPROVED').map(f => f.name);
     const assignedFasil = activeFacilitatingStaff.length > 0 
       ? activeFacilitatingStaff[Math.floor(Math.random() * activeFacilitatingStaff.length)]
-      : 'Ahmad Fauzi';
+      : 'Belum Ditugaskan';
 
     const statusHistory = [
       {
@@ -2330,6 +2354,28 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       alert("Hanya Admin Database yang diperbolehkan menghapus data.");
       return;
     }
+
+    const recordToDelete = records.find(rec => rec.id === id);
+    if (recordToDelete) {
+      // Set statusKunjungan to 'Dihapus' to synchronize with Google Sheets in near real-time
+      const updatedDeletedRecord = {
+        ...recordToDelete,
+        statusKunjungan: 'Dihapus' as any,
+        diinputOleh: 'Admin (Deleted)'
+      };
+      handleSyncToGoogleSheets(updatedDeletedRecord, true);
+
+      // Try to physically delete from Google Sheets if they have updated the Apps Script code
+      fetch(GOOGLE_SHEETS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'deleteRecord',
+          id: id
+        })
+      }).catch(err => console.warn("Optional physical delete record failed:", err));
+    }
+
     try {
       const deletedIdsString = localStorage.getItem('slrt_deleted_record_ids') || '[]';
       const deletedIds = JSON.parse(deletedIdsString);
@@ -2992,7 +3038,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       localStorage.removeItem('slrt_deleted_record_ids');
       localStorage.removeItem('slrt_record_overrides');
       setRecords(INITIAL_RECORDS);
-      setSelectedRecordId('rec-1');
+      setSelectedRecordId(null);
       localStorage.setItem('slrt_records', JSON.stringify(INITIAL_RECORDS));
     }
   };
@@ -5252,10 +5298,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg text-[10px] p-1.5 focus:border-indigo-500 text-slate-700 outline-none font-semibold hover:border-slate-300 transition-colors"
                   >
                     <option value="all">Semua Fasilitator Lapangan</option>
-                    <option value="Ahmad Fauzi">Ahmad Fauzi</option>
-                    <option value="Siti Rahma">Siti Rahma</option>
-                    <option value="Budi Hartono">Budi Hartono</option>
-                    {facilitators.filter(f => f.status === 'APPROVED' && !['Ahmad Fauzi', 'Siti Rahma', 'Budi Hartono'].includes(f.name)).map(f => (
+                    {facilitators.filter(f => f.status === 'APPROVED').map(f => (
                       <option key={f.id} value={f.name}>{f.name}</option>
                     ))}
                   </select>
@@ -5270,13 +5313,10 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg text-[10px] p-1.5 focus:border-indigo-500 text-slate-700 outline-none font-semibold hover:border-slate-300 transition-colors"
                   >
                     <option value="all">Semua Petugas Pendata (Verifier)</option>
-                    <option value="Ahmad Fauzi">Ahmad Fauzi</option>
-                    <option value="Siti Rahma">Siti Rahma</option>
-                    <option value="Budi Hartono">Budi Hartono</option>
-                    <option value="BOY GULO">BOY GULO</option>
-                    {Array.from(new Set<string>(records.map(r => r.namaPendata || '').filter(Boolean))).filter((name) => !['Ahmad Fauzi', 'Siti Rahma', 'Budi Hartono', 'BOY GULO'].includes(name)).map(name => (
-                      <option key={name} value={name}>{name}</option>
+                    {facilitators.filter(f => f.status === 'APPROVED').map(f => (
+                      <option key={f.id} value={f.name}>{f.name}</option>
                     ))}
+                    <option value="Admin Dinsos">Admin Dinsos</option>
                   </select>
                 </div>
 

@@ -448,6 +448,11 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify(deleteFacilitator(payload.id)))
         .setMimeType(ContentService.MimeType.JSON);
     }
+
+    if (action === "deleteRecord") {
+      return ContentService.createTextOutput(JSON.stringify(deleteRecord(payload.id)))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     
     if (action === "syncRecord") {
       return ContentService.createTextOutput(JSON.stringify(syncRecord(payload.data)))
@@ -534,6 +539,28 @@ function deleteFacilitator(id) {
     }
   }
   return { status: "error", message: "Petugas ID " + id + " tidak ditemukan" };
+}
+
+// Menghapus laporan rujukan secara permanen dari Sheet
+function deleteRecord(id) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_RECORDS);
+  if (!sheet) return { status: "error", message: "Sheet laporan rujukan tidak ditemukan" };
+  
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return { status: "error", message: "Data laporan kosong" };
+  
+  const range = sheet.getRange(2, 1, lastRow - 1, 1);
+  const values = range.getValues();
+  
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim() === String(id).trim()) {
+      const rowNum = i + 2;
+      sheet.deleteRow(rowNum);
+      return { status: "success", message: "Laporan " + id + " berhasil dihapus dari sheet secara global" };
+    }
+  }
+  return { status: "error", message: "Laporan ID " + id + " tidak ditemukan" };
 }
 
 // Sinkronisasi Catatan Laporan Pengaduan
