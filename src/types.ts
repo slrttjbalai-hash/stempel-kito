@@ -191,44 +191,7 @@ export interface FacilitatorUser {
   createdAt: string;
 }
 
-export const INITIAL_FACILITATORS: FacilitatorUser[] = [
-  {
-    id: 'fac-1',
-    name: 'Ahmad Fauzi',
-    nik: '1274011202890001',
-    regionKecamatan: 'Datuk Bandar',
-    regionKelurahan: 'Pahang',
-    phone: '081234567891',
-    email: 'ahmad@slrt.id',
-    password: 'fauzi123',
-    status: 'APPROVED',
-    createdAt: 'Senin, 01 Juni 2026'
-  },
-  {
-    id: 'fac-2',
-    name: 'Siti Rahma',
-    nik: '1274011505920003',
-    regionKecamatan: 'Teluk Nibung',
-    regionKelurahan: 'Sei Merbau',
-    phone: '081234567892',
-    email: 'siti@slrt.id',
-    password: 'rahma123',
-    status: 'APPROVED',
-    createdAt: 'Selasa, 02 Juni 2026'
-  },
-  {
-    id: 'fac-3',
-    name: 'Budi Hartono',
-    nik: '1274012408900002',
-    regionKecamatan: 'Sei Tualang Raso',
-    regionKelurahan: 'Pasar Baru',
-    phone: '081234567893',
-    email: 'budi@slrt.id',
-    password: 'hartono123',
-    status: 'APPROVED',
-    createdAt: 'Kamis, 04 Juni 2026'
-  }
-];
+export const INITIAL_FACILITATORS: FacilitatorUser[] = [];
 
 export const getSafeBase64Url = (srcUrl: string | undefined): string => {
   if (!srcUrl) return '';

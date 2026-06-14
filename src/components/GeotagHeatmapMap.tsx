@@ -1,20 +1,18 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { SLRTRecord, KELURAHAN_COORDS } from '../types';
 import { 
-  Map, 
-  Layers, 
+  Map as MapIcon, 
   MapPin, 
   Compass, 
   Flame, 
   Info, 
   Target, 
-  CheckCircle, 
-  AlertCircle,
-  TrendingUp,
   X,
   Plus,
-  Minimize2,
-  Maximize2
+  Minus,
+  RefreshCw,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 interface GeotagHeatmapMapProps {
@@ -30,33 +28,61 @@ const MAP_BOUNDS = {
   maxLng: 99.842
 };
 
+const TANJUNGBALAI_CENTER = {
+  lat: 2.9645,
+  lng: 99.8005
+};
+
 export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeatmapMapProps) {
-  const [viewMode, setViewMode] = useState<'heatmap' | 'pins'>('heatmap');
+  const [viewMode, setViewMode] = useState<'heatmap' | 'pins'>('pins');
   const [filterType, setFilterType] = useState<'all' | 'unvisited' | 'high_priority' | 'geotagged'>('all');
   const [selectedPin, setSelectedPin] = useState<SLRTRecord | null>(null);
-  const [hoveredPin, setHoveredPin] = useState<SLRTRecord | null>(null);
-  const [zoomLevel, setZoomLevel] = useState<number>(1); // Zoom level for visual comfort
-  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({
-    lat: (MAP_BOUNDS.minLat + MAP_BOUNDS.maxLat) / 2,
-    lng: (MAP_BOUNDS.minLng + MAP_BOUNDS.maxLng) / 2
-  });
+  const [mapStyle, setMapStyle] = useState<'dark' | 'light'>('dark');
+  const [leafletLoaded, setLeafletLoaded] = useState(false);
+  
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>(TANJUNGBALAI_CENTER);
+  const [currentZoom, setCurrentZoom] = useState<number>(13);
 
-  // Calculate percentage positions based on bounding box
-  const getXYPercent = (lat: number, lng: number) => {
-    const latSpan = MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat;
-    const lngSpan = MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng;
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const leafletMapInstanceRef = useRef<any>(null);
+  const markerGroupRef = useRef<any>(null);
 
-    // Apply zoom and panning offsets relative to map center
-    const x = ((lng - MAP_BOUNDS.minLng) / lngSpan) * 100;
-    const y = 100 - ((lat - MAP_BOUNDS.minLat) / latSpan) * 100;
+  // Dynamic injection of Leaflet CSS & JS
+  useEffect(() => {
+    // Inject CSS
+    const cssId = 'leaflet-css';
+    if (!document.getElementById(cssId)) {
+      const link = document.createElement('link');
+      link.id = cssId;
+      link.rel = 'stylesheet';
+      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      link.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
+      link.crossOrigin = '';
+      document.head.appendChild(link);
+    }
 
-    return { x, y };
-  };
+    // Inject JS
+    const scriptId = 'leaflet-js';
+    if (!(window as any).L) {
+      if (!document.getElementById(scriptId)) {
+        const script = document.createElement('script');
+        script.id = scriptId;
+        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
+        script.crossOrigin = '';
+        script.onload = () => {
+          setLeafletLoaded(true);
+        };
+        document.body.appendChild(script);
+      }
+    } else {
+      setLeafletLoaded(true);
+    }
+  }, []);
 
   // Filter records
   const filteredRecords = useMemo(() => {
     return records.filter(r => {
-      // Exclude deleted records
       if (r.isDeleted === true || r.isDeleted === 'true') return false;
 
       switch (filterType) {
@@ -65,7 +91,7 @@ export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeat
         case 'high_priority':
           return r.isHighPriority || r.status?.toLowerCase().includes('sangat');
         case 'geotagged':
-          return r.statusKunjungan === 'Sudah Dikunjungi' && r.dokumentasiBukti;
+          return r.statusKunjungan === 'Sudah Dikunjungi';
         default:
           return true;
       }
@@ -95,11 +121,187 @@ export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeat
       .sort((a, b) => b.total - a.total);
   }, [records]);
 
-  // Handle auto centering map on selected hotspot
-  const handleSpotlightHotspot = (lat: number, lng: number) => {
+  // Handle Map Initialization
+  useEffect(() => {
+    if (!leafletLoaded || !mapContainerRef.current) return;
+
+    const L = (window as any).L;
+    if (!L) return;
+
+    // Destroy existing instance to prevent duplicates
+    if (leafletMapInstanceRef.current) {
+      leafletMapInstanceRef.current.remove();
+      leafletMapInstanceRef.current = null;
+    }
+
+    // Create Leaflet Map centered on Tanjungbalai
+    const map = L.map(mapContainerRef.current, {
+      center: [TANJUNGBALAI_CENTER.lat, TANJUNGBALAI_CENTER.lng],
+      zoom: 13,
+      zoomControl: false,
+      attributionControl: false
+    });
+
+    leafletMapInstanceRef.current = map;
+
+    // Add clean attribution
+    L.control.attribution({ prefix: false }).addTo(map);
+
+    // Set openstreetmap tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    // Create marker layer group
+    const markerGroup = L.layerGroup().addTo(map);
+    markerGroupRef.current = markerGroup;
+
+    // Setup map event listeners
+    map.on('moveend', () => {
+      const center = map.getCenter();
+      setMapCenter({ lat: center.lat, lng: center.lng });
+    });
+
+    map.on('zoomend', () => {
+      setCurrentZoom(map.getZoom());
+    });
+
+    return () => {
+      if (leafletMapInstanceRef.current) {
+        leafletMapInstanceRef.current.remove();
+        leafletMapInstanceRef.current = null;
+      }
+    };
+  }, [leafletLoaded]);
+
+  // Update Markers when data, filter types or viewModes change
+  useEffect(() => {
+    const L = (window as any).L;
+    if (!leafletMapInstanceRef.current || !markerGroupRef.current || !L) return;
+
+    // Clear old markers
+    markerGroupRef.current.clearLayers();
+
+    filteredRecords.forEach((rec) => {
+      const lat = rec.latitude;
+      const lng = rec.longitude;
+      if (!lat || !lng) return;
+
+      const isHighPriority = rec.isHighPriority || rec.status?.toLowerCase().includes('sangat');
+      const isVisited = rec.statusKunjungan === 'Sudah Dikunjungi';
+
+      let markerHtml = '';
+
+      if (viewMode === 'heatmap') {
+        // Red, amber, or green glowing circles
+        const color = isHighPriority ? '#ef4444' : isVisited ? '#10b981' : '#f59e0b';
+        const shadow = isHighPriority ? 'rgba(239, 68, 68, 0.4)' : isVisited ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)';
+        markerHtml = `
+          <div class="relative flex items-center justify-center" style="width: 44px; height: 44px;">
+            <div class="absolute w-full h-full rounded-full animate-ping opacity-25" style="background-color: ${color};"></div>
+            <div class="absolute w-8 h-8 rounded-full opacity-35 blur-[3px]" style="background-color: ${color}; box-shadow: 0 0 8px ${shadow};"></div>
+            <div class="w-3.5 h-3.5 rounded-full border border-white/90 shadow-md" style="background-color: ${color};"></div>
+          </div>
+        `;
+      } else {
+        // High fidelity map pin markers
+        const iconBg = isHighPriority ? 'bg-rose-500' : isVisited ? 'bg-emerald-500' : 'bg-amber-500';
+        const ringBg = isHighPriority ? 'border-rose-200' : isVisited ? 'border-emerald-200' : 'border-amber-200';
+        const dotBg = isVisited ? '<div class="w-1.5 h-1.5 bg-white rounded-full"></div>' : '<div class="w-1 h-1 bg-white/70 rounded-full"></div>';
+        
+        markerHtml = `
+          <div class="relative flex items-center justify-center">
+            <div class="w-6 h-6 rounded-full flex items-center justify-center border-2 border-white shadow-md ${iconBg} ${ringBg}">
+              ${dotBg}
+            </div>
+          </div>
+        `;
+      }
+
+      const customIcon = L.divIcon({
+        html: markerHtml,
+        className: 'custom-div-icon',
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
+      });
+
+      const marker = L.marker([lat, lng], { icon: customIcon }).addTo(markerGroupRef.current);
+
+      // Create micro-card popup content matching Tanjungbalai SLRT styles
+      const priorityLabel = isHighPriority 
+        ? `<span class="bg-rose-500/15 text-rose-400 font-extrabold px-1.5 py-0.5 rounded border border-rose-500/25 ml-1.5">MENDESAK</span>` 
+        : '';
+      const statusText = isVisited 
+        ? `<span class="text-emerald-400 font-black flex items-center gap-1">🟢 TERVERIFIKASI</span>` 
+        : `<span class="text-amber-400 font-black flex items-center gap-1">🟡 DALAM ANTREAN</span>`;
+
+      const popupHtml = `
+        <div class="p-1 px-1.5 max-w-[220px] font-sans text-slate-100">
+          <div class="border-b border-slate-700/80 pb-2 mb-2">
+            <h4 class="font-extrabold text-[12.5px] leading-snug text-white truncate">${rec.namaKlien}</h4>
+            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">${rec.kelurahan}, ${rec.kecamatan}</p>
+          </div>
+          <div class="text-[10px] text-slate-300 italic mb-2.5 leading-normal line-clamp-3">
+            "${rec.jenisPengaduan || 'Pengaduan kelayakan rujukan kesejahteraan sosial.'}"
+          </div>
+          <div class="space-y-1.5 text-[9px] text-slate-400">
+            <div class="flex justify-between items-center bg-slate-900/40 p-1 px-1.5 rounded border border-slate-800/40">
+              <span>Status Kunjungan</span>
+              <span class="font-bold">${statusText}</span>
+            </div>
+            <div>Petugas Pendata: <b class="text-slate-100">${rec.namaFasilitator || 'Petugas SLRT'}</b></div>
+            <div class="pt-1.5 border-t border-slate-800/60 font-mono text-[8.5px] text-slate-500 flex justify-between">
+              <span>Lat: ${lat.toFixed(5)}</span>
+              <span>Lng: ${lng.toFixed(5)}</span>
+            </div>
+          </div>
+        </div>
+      `;
+
+      marker.bindPopup(popupHtml, {
+        className: 'slrt-theme-popup',
+        closeButton: false,
+        offset: [0, -4]
+      });
+
+      // Synchronize selection on pin click
+      marker.on('click', () => {
+        setSelectedPin(rec);
+        // Center view on coordinate
+        leafletMapInstanceRef.current?.setView([lat, lng], 15, { animate: true });
+      });
+    });
+  }, [filteredRecords, viewMode, leafletLoaded]);
+
+  // Recenter Map on Tanjungbalai
+  const handleRecenter = () => {
+    if (leafletMapInstanceRef.current) {
+      leafletMapInstanceRef.current.setView([TANJUNGBALAI_CENTER.lat, TANJUNGBALAI_CENTER.lng], 13, { animate: true });
+    }
+  };
+
+  // ZOOM Controllers
+  const handleZoomIn = () => {
+    if (leafletMapInstanceRef.current) {
+      leafletMapInstanceRef.current.zoomIn();
+    }
+  };
+
+  const handleZoomOut = () => {
+    if (leafletMapInstanceRef.current) {
+      leafletMapInstanceRef.current.zoomOut();
+    }
+  };
+
+  // Hotspot spotlight action
+  const handleSpotlightHotspot = (lat: number, lng: number, name: string) => {
     setMapCenter({ lat, lng });
-    // Find closest record near this kelurahan
-    const nearRec = records.find(r => r.kelurahan && KELURAHAN_COORDS[r.kelurahan]?.lat === lat);
+    if (leafletMapInstanceRef.current) {
+      leafletMapInstanceRef.current.setView([lat, lng], 15, { animate: true });
+    }
+    // Find closest record in this kelurahan
+    const nearRec = records.find(r => r.kelurahan === name);
     if (nearRec) {
       setSelectedPin(nearRec);
     }
@@ -108,7 +310,35 @@ export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeat
   return (
     <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs flex flex-col gap-0 select-none">
       
-      {/* Title Header with status bar */}
+      {/* Styles Injection for Customized Leaflet Dark & Light theme maps */}
+      <style>{`
+        /* Dark Theme filter for tile layer */
+        .leaflet-dark-style .leaflet-tile-container {
+          filter: invert(0.9) hue-rotate(185deg) brightness(0.9) contrast(1.15) saturate(0.85);
+        }
+        .leaflet-dark-style {
+          background-color: #020617 !important;
+        }
+
+        /* Custom modern dark theme popup */
+        .slrt-theme-popup .leaflet-popup-content-wrapper {
+          background: #0f172a !important; /* Slate 900 */
+          color: #f8fafc !important; /* Slate 50 */
+          border-radius: 12px;
+          border: 1px solid #334155; /* Slate 700 */
+          font-family: inherit;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+        }
+        .slrt-theme-popup .leaflet-popup-tip {
+          background: #0f172a !important;
+          border: 1px solid #334155;
+        }
+        .leaflet-container {
+          z-index: 10 !important;
+        }
+      `}</style>
+
+      {/* Map Control Title Bar */}
       <div className="p-4 border-b border-slate-150 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-3 font-sans">
         <div className="flex items-center gap-1.5">
           <div className="p-1.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-600 animate-pulse">
@@ -116,24 +346,43 @@ export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeat
           </div>
           <div>
             <h2 className="text-xs font-black text-slate-800 uppercase tracking-widest leading-none">
-              Peta Sebaran &amp; Heatmap Kepadatan Aduan Geotagging
+              Peta Sebaran &amp; Heatmap Kependudukan Geotagging
             </h2>
             <p className="text-[10px] text-slate-400 leading-normal mt-1 italic">
-              Visualisasi persebaran spasial real-time berdasarkan titik koordinat GPS dari kunjungan lapangan verifikator
+              Visualisasi tata ruang sebaran kasus aduan real-time terintegrasi dengan peta satelit OpenStreetMap Kota Tanjungbalai
             </p>
           </div>
         </div>
 
         {/* Action Controls for Map display */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Toggle Display Map Mode */}
+          {/* Map Style Switcher (Dark/Light Map) */}
+          <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+            <button
+              onClick={() => setMapStyle('dark')}
+              className={`px-2 py-1.5 rounded-md text-[9px] font-black uppercase flex items-center gap-1 transition-all cursor-pointer ${
+                mapStyle === 'dark' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-400 hover:text-slate-700'
+              }`}
+            >
+              Mode Gelap
+            </button>
+            <button
+              onClick={() => setMapStyle('light')}
+              className={`px-2 py-1.5 rounded-md text-[9px] font-black uppercase flex items-center gap-1 transition-all cursor-pointer ${
+                mapStyle === 'light' ? 'bg-white text-slate-900 shadow-xs border border-slate-200' : 'text-slate-400 hover:text-slate-700'
+              }`}
+            >
+              Mode Terang
+            </button>
+          </div>
+
+          {/* Toggle Display Map Mode (Pins vs. Heatmap) */}
           <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200">
             <button
               onClick={() => setViewMode('heatmap')}
               className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase flex items-center gap-1 transition-all cursor-pointer ${
                 viewMode === 'heatmap' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
               }`}
-              title="Aktifkan tampilan Heatmap Kepadatan Spasial"
             >
               <Flame className="w-3 h-3" /> Heatmap
             </button>
@@ -142,19 +391,18 @@ export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeat
               className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase flex items-center gap-1 transition-all cursor-pointer ${
                 viewMode === 'pins' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
               }`}
-              title="Tampilkan pin marker individu pada koordinat"
             >
               <MapPin className="w-3 h-3" /> Pin Lokasi
             </button>
           </div>
 
-          {/* Filter Dropdowns */}
+          {/* Status Filter for map markers */}
           <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200">
             {[
-              { id: 'all', label: 'Semua' },
+              { id: 'all', label: 'Semu' },
               { id: 'unvisited', label: 'Antrean' },
               { id: 'high_priority', label: 'Prioritas' },
-              { id: 'geotagged', label: 'Verified Geotag' }
+              { id: 'geotagged', label: 'Verified' }
             ].map((btn) => (
               <button
                 key={btn.id}
@@ -174,15 +422,12 @@ export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeat
       <div className="grid grid-cols-12 divide-y md:divide-y-0 md:divide-x divide-slate-150">
         
         {/* Left Side: Interactive GIS Map Canvas */}
-        <div className="col-span-12 md:col-span-8 p-4 bg-slate-950 flex flex-col justify-between min-h-[440px] relative overflow-hidden">
-          
-          {/* Subtle radar scan background grid effect */}
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,#0f172a_1px,transparent_1px),linear-gradient(to_bottom,#0f172a_1px,transparent_1px)] bg-[size:24px_24px] opacity-15 pointer-events-none"></div>
+        <div className="col-span-12 md:col-span-8 p-0 bg-slate-950 flex flex-col justify-end min-h-[460px] relative overflow-hidden">
           
           {/* Legend HUD overlay left */}
-          <div className="absolute left-4 top-4 z-20 bg-slate-900/90 backdrop-blur-md p-3 rounded-xl border border-slate-800 pointer-events-auto flex flex-col gap-2 shadow-xl shrink-0 max-w-[220px]">
+          <div className="absolute left-4 top-4 z-20 bg-slate-900/90 backdrop-blur-md p-3 rounded-xl border border-slate-800 pointer-events-auto flex flex-col gap-2 shadow-xl shrink-0 max-w-[210px] font-sans">
             <span className="text-[9px] font-black uppercase text-indigo-400 tracking-wider flex items-center gap-1">
-              <Compass className="w-3.5 h-3.5 text-rose-500 animate-[spin_5s_linear_infinite]" /> PETA GIS TANJUNGBALAI
+              <Compass className="w-3.5 h-3.5 text-rose-500 animate-[spin_10s_linear_infinite]" /> PETA GIS TANJUNGBALAI
             </span>
             <hr className="border-slate-800" />
             <div className="text-[9px] text-slate-300 font-medium space-y-1.5">
@@ -196,11 +441,11 @@ export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeat
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 block"></span>
-                <span>Selesai Geotag</span>
+                <span>Kunjungan Verified</span>
               </div>
               <hr className="border-slate-800 my-1" />
               <div className="text-[8px] text-slate-400 mt-1">
-                Letak spasial dihitung dinamis dari data koordinat GPS pelaporan.
+                Peta interaktif nyata dengan sebaran titik GPS terverifikasi lapangan.
               </div>
             </div>
           </div>
@@ -214,179 +459,59 @@ export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeat
             
             <div className="flex flex-col bg-slate-900/95 border border-slate-800 rounded-lg overflow-hidden">
               <button 
-                onClick={() => setZoomLevel(prev => Math.min(prev + 0.25, 2.5))}
-                className="p-1 px-2 text-white hover:bg-slate-800 transition-colors text-[10px] font-black cursor-pointer border-b border-slate-800"
-                title="Perbesar Peta"
+                onClick={handleZoomIn}
+                className="p-1.5 px-2.5 text-white hover:bg-slate-800 transition-colors text-xs font-black cursor-pointer border-b border-slate-800"
+                title="Zoom In"
               >
-                +
+                <Plus className="w-3 h-3 text-slate-200" />
               </button>
               <button 
-                onClick={() => setZoomLevel(prev => Math.max(prev - 0.25, 0.75))}
-                className="p-1 px-2 text-white hover:bg-slate-800 transition-colors text-[10px] font-black cursor-pointer"
-                title="Perkecil Peta"
+                onClick={handleZoomOut}
+                className="p-1.5 px-2.5 text-white hover:bg-slate-800 transition-colors text-xs font-black cursor-pointer border-b border-slate-800"
+                title="Zoom Out"
               >
-                −
+                <Minus className="w-3 h-3 text-slate-300" />
+              </button>
+              <button 
+                onClick={handleRecenter}
+                className="p-1.5 px-2.5 text-indigo-400 hover:bg-slate-800 transition-colors text-xs font-black cursor-pointer"
+                title="Segarkan Posisi Pusat Kota"
+              >
+                <RefreshCw className="w-3 h-3 text-indigo-300" />
               </button>
             </div>
           </div>
 
           {/* Active coordinates of mouse tracking or center */}
-          <div className="absolute left-4 bottom-4 z-20 bg-slate-900/80 backdrop-blur-md px-2 py-1 rounded-md border border-slate-800 text-[8px] font-mono text-slate-400 space-x-2 flex">
-            <span>📡 GPS CENTER: {mapCenter.lat.toFixed(5)}, {mapCenter.lng.toFixed(5)}</span>
-            <span className="text-slate-600">|</span>
-            <span>DATA TERMAPPING: {filteredRecords.length} TITIK</span>
+          <div className="absolute left-4 bottom-4 z-20 bg-slate-900/90 backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-slate-800 text-[8.5px] font-mono text-slate-400 space-x-2 flex items-center">
+            <span className="flex items-center gap-1 text-teal-400"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> GPS CENTER:</span>
+            <span>{mapCenter.lat.toFixed(5)}, {mapCenter.lng.toFixed(5)}</span>
+            <span className="text-slate-700">|</span>
+            <span>ZOOM: {currentZoom}</span>
+            <span className="text-slate-700">|</span>
+            <span className="text-white font-extrabold">{filteredRecords.length} DATA AKTIF</span>
           </div>
 
-          {/* Hover popup micro tooltip */}
-          {hoveredPin && (
-            <div 
-              className="absolute z-40 bg-slate-900 text-white p-2.5 rounded-xl border border-slate-700 shadow-xl max-w-[200px] pointer-events-none transition-all duration-150"
-              style={{
-                left: `${getXYPercent(hoveredPin.latitude || 2.96, hoveredPin.longitude || 99.8).x}%`,
-                top: `${getXYPercent(hoveredPin.latitude || 2.96, hoveredPin.longitude || 99.8).y - 8}%`,
-                transform: 'translate(-50%, -100%)'
-              }}
-            >
-              <div className="text-[10px] font-black truncate">{hoveredPin.namaKlien}</div>
-              <div className="text-[8px] text-indigo-400 font-semibold">{hoveredPin.kelurahan}, {hoveredPin.kecamatan}</div>
-              <hr className="border-slate-800 my-1" />
-              <div className="text-[8px] text-slate-300 line-clamp-2 leading-relaxed italic">
-                "{hoveredPin.jenisPengaduan || 'No issues declared'}"
-              </div>
-              <div className="text-[7px] font-mono text-slate-500 mt-1">
-                Lat: {hoveredPin.latitude?.toFixed(5)}, Lon: {hoveredPin.longitude?.toFixed(5)}
-              </div>
+          {/* Leaflet Map canvas wrapper */}
+          <div 
+            ref={mapContainerRef} 
+            className={`w-full h-full min-h-[460px] ${mapStyle === 'dark' ? 'leaflet-dark-style' : ''}`}
+            id="slrt-interactive-map-container"
+          />
+
+          {!leafletLoaded && (
+            <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center gap-3 z-30">
+              <div className="w-8 h-8 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin"></div>
+              <p className="text-slate-300 text-xs font-bold font-sans tracking-wide">Memuat Sistem Integrasi Geospasial GIS...</p>
             </div>
           )}
-
-          {/* Plotting Canvas Stage Container */}
-          <div 
-            className="w-full h-full min-h-[380px] relative transition-transform duration-300"
-            style={{
-              transform: `scale(${zoomLevel})`,
-              transformOrigin: 'center center'
-            }}
-          >
-            {/* Visual outlines representing Kecamatan core zones of Tanjungbalai */}
-            {/* These are styled geometric landmarks to represent the real shape of Tanjungbalai on the coordinate map */}
-            <svg className="absolute inset-0 w-full h-full opacity-35" viewBox="0 0 100 100" preserveAspectRatio="none">
-              {/* Datuk Bandar & Datuk Bandar Timur (South/West Areas) */}
-              <path d="M 5,95 Q 25,65 30,50 T 60,35 T 85,35" fill="none" stroke="#312e81" strokeWidth="1" strokeDasharray="2 3" />
-              <text x="20" y="75" className="fill-indigo-500/80 font-black text-[2px] tracking-widest uppercase">KEC. DATUK BANDAR</text>
-              <text x="65" y="70" className="fill-indigo-500/80 font-black text-[2px] tracking-widest uppercase">DATUK BANDAR TIMUR</text>
-              
-              {/* Tanjungbalai Selatan & Utara (Center Area) */}
-              <circle cx="50" cy="45" r="15" fill="none" stroke="#1e1b4b" strokeWidth="0.5" strokeDasharray="4 4" />
-              <text x="42" y="47" className="fill-indigo-400 font-extrabold text-[2.2px] uppercase">TB SELATAN</text>
-              <text x="45" y="38" className="fill-indigo-400 font-extrabold text-[2.2px] uppercase">TB UTARA</text>
-              
-              {/* Sei Tualang Raso & Teluk Nibung (North Area) */}
-              <path d="M 25,10 Q 50,20 65,10 T 95,5" fill="none" stroke="#312e81" strokeWidth="1" strokeDasharray="2 3" />
-              <text x="35" y="22" className="fill-indigo-500/80 font-black text-[2px] tracking-widest uppercase">SEI TUALANG RASO</text>
-              <text x="75" y="18" className="fill-indigo-500/80 font-black text-[2px] tracking-widest uppercase">TELUK NIBUNG</text>
-            </svg>
-
-            {/* Render Map Data Nodes */}
-            {filteredRecords.map((rec) => {
-              const lat = rec.latitude || 2.9645;
-              const lng = rec.longitude || 99.8005;
-              const pos = getXYPercent(lat, lng);
-
-              // Determine color themes
-              const isHighPriority = rec.isHighPriority || rec.status?.toLowerCase().includes('sangat');
-              const isVisited = rec.statusKunjungan === 'Sudah Dikunjungi';
-
-              let baseColor = 'bg-amber-500';
-              let glowColor = 'shadow-amber-500/50';
-              if (isHighPriority) {
-                baseColor = 'bg-rose-500';
-                glowColor = 'shadow-rose-500/50';
-              }
-              if (isVisited) {
-                baseColor = 'bg-emerald-500';
-                glowColor = 'shadow-emerald-500/50';
-              }
-
-              if (viewMode === 'heatmap') {
-                // Return a beautiful concentric radial glow (Heatmap density representation)
-                return (
-                  <div
-                    key={rec.id}
-                    className="absolute rounded-full pointer-events-auto cursor-pointer transition-all hover:scale-125"
-                    style={{
-                      left: `${pos.x}%`,
-                      top: `${pos.y}%`,
-                      transform: 'translate(-50%, -50%)',
-                      width: isHighPriority ? '42px' : '30px',
-                      height: isHighPriority ? '42px' : '30px',
-                    }}
-                    onMouseEnter={() => setHoveredPin(rec)}
-                    onMouseLeave={() => setHoveredPin(null)}
-                    onClick={() => {
-                      setSelectedPin(rec);
-                      setMapCenter({ lat, lng });
-                    }}
-                  >
-                    {/* Concentric core heat layers */}
-                    <div className="w-full h-full rounded-full bg-rose-600/10 blur-[1px] animate-[pulse_3s_ease-in-out_infinite] flex items-center justify-center">
-                      <div className="w-3/4 h-3/4 rounded-full bg-rose-500/20 blur-[2px] flex items-center justify-center">
-                        <div className="w-1/2 h-1/2 rounded-full bg-rose-500/40 blur-[1px] flex items-center justify-center">
-                          <div className={`w-2 h-2 rounded-full ${baseColor} z-10`}></div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              } else {
-                // Return pinpoint markers
-                return (
-                  <button
-                    key={rec.id}
-                    onMouseEnter={() => setHoveredPin(rec)}
-                    onMouseLeave={() => setHoveredPin(null)}
-                    onClick={() => {
-                      setSelectedPin(rec);
-                      setMapCenter({ lat, lng });
-                    }}
-                    className="absolute -translate-x-1/2 -translate-y-1/2 z-10 cursor-pointer p-1 rounded-full hover:bg-slate-800/80 transition-all border border-transparent hover:border-slate-700 pointer-events-auto"
-                    style={{
-                      left: `${pos.x}%`,
-                      top: `${pos.y}%`,
-                    }}
-                  >
-                    <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border-2 border-white/80 shadow-md ${baseColor} ${glowColor}`}>
-                      {rec.statusKunjungan === 'Sudah Dikunjungi' ? (
-                        <div className="w-1 h-1 bg-white rounded-full"></div>
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              }
-            })}
-
-            {/* Visual Spotlight helper ring for active selection */}
-            {selectedPin && selectedPin.latitude && selectedPin.longitude && (
-              <div 
-                className="absolute z-0 pointer-events-none border-2 border-dashed border-indigo-400 rounded-full animate-[spin_10s_linear_infinite]"
-                style={{
-                  left: `${getXYPercent(selectedPin.latitude, selectedPin.longitude).x}%`,
-                  top: `${getXYPercent(selectedPin.latitude, selectedPin.longitude).y}%`,
-                  transform: 'translate(-50%, -50%)',
-                  width: '64px',
-                  height: '64px'
-                }}
-              >
-                <div className="w-full h-full border border-indigo-400/30 rounded-full scale-125 animate-ping opacity-60"></div>
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Right Side: Hotspot Stats & Direct Pin Summary Drawer */}
-        <div className="col-span-12 md:col-span-4 flex flex-col justify-between bg-slate-50 relative min-h-[440px]">
+        <div className="col-span-12 md:col-span-4 flex flex-col justify-between bg-slate-50 relative min-h-[460px]">
           
           {/* Top segment: Dynamic Switchable context depending on Selection */}
-          <div className="p-4 flex-1 overflow-y-auto max-h-[380px] font-sans">
+          <div className="p-4 flex-1 overflow-y-auto max-h-[390px] font-sans">
             {selectedPin ? (
               // Selection Summary Detail View
               <div className="flex flex-col gap-3.5">
@@ -403,7 +528,7 @@ export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeat
                 </div>
 
                 {/* Primary Card */}
-                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-2 relative overflow-hidden">
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-2 relative overflow-hidden">
                   <div>
                     <h3 className="font-extrabold text-sm text-slate-900 truncate leading-snug">{selectedPin.namaKlien}</h3>
                     <p className="text-[10px] text-slate-500 font-semibold">{selectedPin.kelurahan}, {selectedPin.kecamatan}</p>
@@ -433,27 +558,27 @@ export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeat
 
                 {/* Visitation info, latitude, longitude */}
                 <div className="grid grid-cols-2 gap-2 text-[10px]">
-                  <div className="bg-slate-100 border border-slate-250 p-2.5 rounded-xl">
+                  <div className="bg-slate-100 border border-slate-200 p-2.5 rounded-xl">
                     <span className="text-slate-400 block text-[8px] uppercase tracking-wider">LATITUDE GPS</span>
-                    <span className="font-mono text-slate-800 font-black mt-0.5 block">{selectedPin.latitude?.toFixed(6) || '0.000'}</span>
+                    <span className="font-mono text-slate-800 font-black mt-0.5 block">{selectedPin.latitude?.toFixed(6) || '0.00000'}</span>
                   </div>
-                  <div className="bg-slate-100 border border-slate-250 p-2.5 rounded-xl">
+                  <div className="bg-slate-100 border border-slate-200 p-2.5 rounded-xl">
                     <span className="text-slate-400 block text-[8px] uppercase tracking-wider">LONGITUDE GPS</span>
-                    <span className="font-mono text-slate-800 font-black mt-0.5 block">{selectedPin.longitude?.toFixed(6) || '0.000'}</span>
+                    <span className="font-mono text-slate-800 font-black mt-0.5 block">{selectedPin.longitude?.toFixed(6) || '0.00000'}</span>
                   </div>
                 </div>
 
                 {/* Status Visit Row */}
-                <div className="flex items-center gap-1.5 p-2 bg-white rounded-lg border border-slate-200">
+                <div className="flex items-center gap-1.5 p-2 px-2.5 bg-white rounded-lg border border-slate-200">
                   {selectedPin.statusKunjungan === 'Sudah Dikunjungi' ? (
                     <>
                       <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></div>
-                      <span className="text-[10px] font-black text-emerald-800 uppercase animate-pulse">Selesai Diverifikasi Lapangan (Geotagged)</span>
+                      <span className="text-[9.5px] font-black text-emerald-800 uppercase">Selesai Lapangan (Geotagged)</span>
                     </>
                   ) : (
                     <>
                       <div className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></div>
-                      <span className="text-[10px] font-black text-amber-800 uppercase">Mengantre Kunjungan &amp; Geotag Lapangan</span>
+                      <span className="text-[9.5px] font-black text-amber-800 uppercase text-amber-605">Mengantre Survei Geotag</span>
                     </>
                   )}
                 </div>
@@ -462,7 +587,7 @@ export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeat
                 {onSelectRecord && (
                   <button
                     onClick={() => onSelectRecord(selectedPin.id)}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2 text-xs rounded-xl flex items-center justify-center gap-2 shadow-md cursor-pointer transition-colors uppercase tracking-wider"
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2.5 text-xs rounded-xl flex items-center justify-center gap-2 shadow-md cursor-pointer transition-colors uppercase tracking-wider"
                   >
                     <Target className="w-3.5 h-3.5" /> Buka Berkas Lengkap
                   </button>
@@ -472,22 +597,21 @@ export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeat
               // Default view: ranking of High Density Hotspots
               <div className="flex flex-col gap-3">
                 <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-widest block border-b border-slate-200 pb-1.5 flex items-center gap-1">
-                  <TrendingUp className="w-3.5 h-3.5 text-indigo-600" /> Kepadatan Aduan per Kelurahan
+                  <Flame className="w-3.5 h-3.5 text-rose-500" /> Kepadatan Aduan per Kelurahan
                 </span>
 
-                <div className="flex flex-col gap-2">
-                  {kelurahanHotspots.slice(0, 5).map((spot, i) => {
-                    // Density status representation
+                <div className="flex flex-col gap-2 max-h-[330px] overflow-y-auto pr-1">
+                  {kelurahanHotspots.slice(0, 7).map((spot) => {
                     const badgeColor = spot.total > 4 
-                      ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                      ? 'bg-rose-50 text-rose-700 border-rose-250' 
                       : spot.total > 2 
-                      ? 'bg-amber-50 text-amber-700 border-amber-200' 
-                      : 'bg-indigo-50 text-indigo-700 border-indigo-200';
+                      ? 'bg-amber-50 text-amber-700 border-amber-250' 
+                      : 'bg-indigo-50 text-indigo-700 border-indigo-250';
 
                     return (
                       <div 
                         key={spot.name}
-                        onClick={() => handleSpotlightHotspot(spot.lat, spot.lng)}
+                        onClick={() => handleSpotlightHotspot(spot.lat, spot.lng, spot.name)}
                         className="bg-white p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 hover:shadow-xs transition-all cursor-pointer flex items-center justify-between gap-2 group"
                       >
                         <div>
@@ -516,7 +640,7 @@ export default function GeotagHeatmapMap({ records, onSelectRecord }: GeotagHeat
           <div className="bg-slate-100 p-3.5 border-t border-slate-200 flex gap-2 font-sans shrink-0">
             <Info className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
             <p className="text-[9px] text-slate-500 leading-normal italic">
-              <strong>Tip Administrator:</strong> Klik kelurahan atau titik pin di peta untuk memfokuskan peta, melacak asisten lapangan, dan melihat ringkasan status aduan warga di wilayah tersebut.
+              <strong>Tip Geospasial:</strong> Gunakan tombol "Mode Gelap/Gaya GIS" untuk memantau sebaran seolah-olah mengoperasikan layar radar command center dinas sosial, dan klik kelurahan pada daftar untuk fokus dan menggali rincian titik koordinat terkait.
             </p>
           </div>
         </div>

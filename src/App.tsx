@@ -44,6 +44,7 @@ import SmartParserTab from './components/SmartParserTab';
 import HelpTab from './components/HelpTab';
 import DashboardSummary from './components/DashboardSummary';
 import NikValidationOverlay from './components/NikValidationOverlay';
+import { SidebarListSkeleton, BentoDetailsSkeleton } from './components/SkeletonLoader';
 import * as XLSX from 'xlsx';
 import { 
   photosArchiveCache, 
@@ -332,7 +333,7 @@ function normalizeRecord(rec: any): SLRTRecord {
   const statusKunjungan = rec.statusKunjungan || rec.status_kunjungan || rec.statuskunjungan || 'Belum Dikunjungi';
   const tanggalPemeriksaan = rec.tanggalPemeriksaan || rec.tanggal_pemeriksaan || rec.tanggalpemeriksaan || '';
   const catatanPemeriksa = rec.catatanPemeriksa || rec.catatan_pendata || rec.catatan_pemeriksa || rec.catatanpemeriksa || '';
-  const namaPendata = rec.namaPendata || rec.nama_pendata || rec.namapendata || '';
+  const namaPendata = rec.namaPendata || rec.nama_pendata || rec.namapendata || rec.namaFasilitator || '';
 
   // Parse or default Indikator Sosial Ekonomi
   let indikatorSosialEkonomi = rec.indikatorSosialEkonomi || [];
@@ -995,6 +996,7 @@ export default function App() {
   const [filterEndYear, setFilterEndYear] = useState('');
   const [filterVerifStartDate, setFilterVerifStartDate] = useState('');
   const [filterVerifEndDate, setFilterVerifEndDate] = useState('');
+  const [filterBulanBerjalan, setFilterBulanBerjalan] = useState(false);
 
   // Selected Record state
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>('rec-1');
@@ -1742,7 +1744,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       fotoDepanRumah: existingRec?.fotoDepanRumah,
       foto_hunian_url: existingRec?.foto_hunian_url,
       foto_ktp_url: existingRec?.foto_ktp_url,
-      namaPendata: existingRec?.namaPendata,
+      namaPendata: formFasilitator.trim() || existingRec?.namaPendata,
       catatan_pendata: existingRec?.catatan_pendata,
       diinputOleh: existingRec ? existingRec.diinputOleh : 'Admin',
       latitude: formLatitude !== null ? formLatitude : (existingRec?.latitude !== undefined ? existingRec.latitude : undefined),
@@ -2107,6 +2109,16 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setVerifierLat(rec.latitude || null);
     setVerifierLng(rec.longitude || null);
     setShowVerifierModal(true);
+
+    // Otomatisasi deteksi GPS real-time ketika fasilitator saat membuka modal verifikasi aduan
+    getGeotagCoordinates()
+      .then((geo) => {
+        setVerifierLat(geo.latitude);
+        setVerifierLng(geo.longitude);
+      })
+      .catch((err) => {
+        console.warn("Auto GPS detection in verifier modal failed:", err);
+      });
   };
 
   // Submit/save visitation verification from facilitator perspective
@@ -2455,7 +2467,16 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         }
       }
 
-      return matchesSearch && matchesKecamatan && matchesKelurahan && matchesStatus && matchesKunjungan && matchesFasilitatorFilter && matchesPendataFilter && matchesDateRange && matchesVerifDateRange;
+      let matchesBulanBerjalan = true;
+      if (filterBulanBerjalan) {
+        if (parsedDate) {
+          matchesBulanBerjalan = parsedDate.month === 6 && parsedDate.year === 2026;
+        } else {
+          matchesBulanBerjalan = false;
+        }
+      }
+
+      return matchesSearch && matchesKecamatan && matchesKelurahan && matchesStatus && matchesKunjungan && matchesFasilitatorFilter && matchesPendataFilter && matchesDateRange && matchesVerifDateRange && matchesBulanBerjalan;
     });
   }, [
     records, 
@@ -2471,13 +2492,37 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     filterEndMonth,
     filterEndYear,
     filterVerifStartDate,
-    filterVerifEndDate
+    filterVerifEndDate,
+    filterBulanBerjalan
   ]);
 
   // Selected Object
   const selectedRecord = useMemo(() => {
     return records.find(rec => rec.id === selectedRecordId) || null;
   }, [records, selectedRecordId]);
+
+  // Stats per Kelurahan for current month (Juni 2026)
+  const currentMonthKelurahanStats = useMemo(() => {
+    const stats: Record<string, { total: number; visited: number; unvisited: number }> = {};
+    records.forEach(r => {
+      if (r.isDeleted === true || r.isDeleted === 'true') return;
+      const parsedDate = parseMonthAndYear(r.hariTanggal);
+      const isCurrentMonth = parsedDate && parsedDate.month === 6 && parsedDate.year === 2026;
+      if (isCurrentMonth) {
+        const kel = r.kelurahan || 'Tidak Diketahui';
+        if (!stats[kel]) {
+          stats[kel] = { total: 0, visited: 0, unvisited: 0 };
+        }
+        stats[kel].total += 1;
+        if (r.statusKunjungan === 'Sudah Dikunjungi') {
+          stats[kel].visited += 1;
+        } else {
+          stats[kel].unvisited += 1;
+        }
+      }
+    });
+    return stats;
+  }, [records]);
 
   // 18 formats text generator
   const generateListText = (rec: SLRTRecord) => {
@@ -2949,6 +2994,23 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       setRecords(INITIAL_RECORDS);
       setSelectedRecordId('rec-1');
       localStorage.setItem('slrt_records', JSON.stringify(INITIAL_RECORDS));
+    }
+  };
+
+  // Clear Database completely
+  const handleClearDatabase = () => {
+    if (window.confirm("Apakah Anda yakin ingin MENGOSONGKAN seluruh database? Tindakan ini tidak dapat dibatalkan dan akan menghapus semua data rujukan serta akun petugas lapangan lokal.")) {
+      localStorage.removeItem('slrt_records');
+      localStorage.removeItem('slrt_deleted_record_ids');
+      localStorage.removeItem('slrt_record_overrides');
+      localStorage.removeItem('slrt_facilitators');
+      localStorage.removeItem('slrt_deleted_facilitator_ids');
+      localStorage.removeItem('slrt_status_overrides');
+      
+      setRecords([]);
+      setFacilitators([]);
+      setSelectedRecordId(null);
+      alert("Seluruh database berhasil dikosongkan sepenuhnya!");
     }
   };
 
@@ -5361,20 +5423,121 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 </div>
               </div>
 
+              {/* INTERACTIVE HUD: BULAN BERJALAN & PER KELURAHAN COVERS */}
+              <div className="bg-slate-50 border-y border-slate-200 p-3.5 flex flex-col gap-2 shrink-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                    Saringan Bulan Berjalan (Juni 2026)
+                  </span>
+                  
+                  {/* Toggle button for Bulan Berjalan Filter */}
+                  <button
+                    onClick={() => {
+                      setFilterBulanBerjalan(!filterBulanBerjalan);
+                      // If deactivated, reset kelurahan filter as well if chosen
+                      if (filterBulanBerjalan) {
+                        setFilterKelurahan('');
+                      }
+                    }}
+                    className={`px-2 py-0.5 rounded-md text-[8.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                      filterBulanBerjalan 
+                        ? 'bg-indigo-600 text-white shadow-xs' 
+                        : 'bg-white hover:bg-slate-100 text-slate-500 border border-slate-200'
+                    }`}
+                  >
+                    {filterBulanBerjalan ? 'Aktif' : 'Aktifkan'}
+                  </button>
+                </div>
+
+                <p className="text-[9px] text-slate-450 leading-normal italic">
+                  Informasi sebaran laporan masuk bulan berjalan per Kelurahan. Klik untuk menyaring secara instan:
+                </p>
+
+                {/* Grid of Kelurahan Chips */}
+                {Object.keys(currentMonthKelurahanStats).length === 0 ? (
+                  <div className="text-center p-2 text-slate-400 text-[9px] italic bg-white rounded-lg border border-slate-150">
+                    Tidak ada berkas terdaftar untuk bulan berjalan.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-1.5 max-h-[145px] overflow-y-auto pr-0.5">
+                    {(Object.entries(currentMonthKelurahanStats) as [string, { total: number; visited: number; unvisited: number }][])
+                      .map(([kelName, stats]) => {
+                        const isKelActive = filterBulanBerjalan && filterKelurahan.toLowerCase() === kelName.toLowerCase();
+                        return (
+                          <button
+                            key={kelName}
+                            type="button"
+                            onClick={() => {
+                              // Auto activate the Bulan Berjalan filter
+                              setFilterBulanBerjalan(true);
+                              
+                              if (isKelActive) {
+                                setFilterKelurahan('');
+                              } else {
+                                setFilterKelurahan(kelName);
+                              }
+                            }}
+                            className={`p-1.5 rounded-lg border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                              isKelActive 
+                                ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-400 text-indigo-950 shadow-2xs' 
+                                : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
+                            }`}
+                          >
+                            <span className="text-[9.5px] font-bold truncate block w-full text-slate-800">
+                              Kel. {kelName}
+                            </span>
+                            <div className="flex items-center justify-between mt-1 w-full text-[8.5px] font-mono leading-none">
+                              <span className="text-slate-400">Berkas:</span>
+                              <span className="font-bold text-slate-800">{stats.total}</span>
+                            </div>
+                            <div className="flex items-center justify-between mt-0.5 w-full text-[8px] font-bold text-teal-600 leading-none">
+                              <span>Selesai:</span>
+                              <span>{stats.visited} / {stats.total}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
+
+                {/* Actionable status indicator */}
+                {filterBulanBerjalan && (
+                  <div className="flex justify-between items-center bg-indigo-50/50 p-1.5 rounded-lg border border-indigo-100 mt-0.5">
+                    <span className="text-[8.5px] text-indigo-900 font-bold">
+                      Menyaring {filterKelurahan ? `Kel. ${filterKelurahan}` : 'Semua Kelurahan'} (Juni 2026)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterBulanBerjalan(false);
+                        setFilterKelurahan('');
+                      }}
+                      className="text-[8px] font-black text-rose-600 hover:text-rose-800 uppercase cursor-pointer"
+                    >
+                      Batal Saring
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Sidebar list visitors queue */}
               <div className="flex-1 overflow-y-auto">
-                <motion.div
-                  key={`${searchQuery}_${filterKecamatan}_${filterKelurahan}_${filterStatus}_${filterKunjungan}_${filterVerifStartDate}_${filterVerifEndDate}_${filteredRecords.length}`}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.25, ease: "easeOut" }}
-                  className="divide-y divide-slate-100"
-                >
-                  {filteredRecords.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400 text-xs">
-                      Tidak ada kunjungan cocok filter
-                    </div>
-                  ) : (
+                {cloudLoading ? (
+                  <SidebarListSkeleton />
+                ) : (
+                  <motion.div
+                    key={`${searchQuery}_${filterKecamatan}_${filterKelurahan}_${filterStatus}_${filterKunjungan}_${filterVerifStartDate}_${filterVerifEndDate}_${filteredRecords.length}`}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                    className="divide-y divide-slate-100"
+                  >
+                    {filteredRecords.length === 0 ? (
+                      <div className="p-8 text-center text-slate-400 text-xs">
+                        Tidak ada kunjungan cocok filter
+                      </div>
+                    ) : (
                     filteredRecords.map((rec) => {
                       const isSelected = selectedRecordId === rec.id;
                       const isSangatMiskin = rec.status.toLowerCase().includes('sangat');
@@ -5447,7 +5610,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       );
                     })
                   )}
-                </motion.div>
+                  </motion.div>
+                )}
               </div>
 
               {/* Sidebar trigger to add new */}
@@ -5632,12 +5796,20 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               accept=".csv" 
               className="hidden" 
             />
-            <button 
-              onClick={handleResetToDemo}
-              className="text-[10px] text-slate-400 hover:text-rose-600 text-left cursor-pointer transition-colors flex items-center gap-1"
-            >
-              <RotateCcw className="w-2.5 h-2.5" /> Atur Ulang Data Simulasi
-            </button>
+            <div className="flex flex-col gap-2.5 mt-2.5 pt-2 border-t border-slate-100">
+              <button 
+                onClick={handleResetToDemo}
+                className="text-[10px] text-slate-400 hover:text-indigo-600 text-left cursor-pointer transition-colors flex items-center gap-1"
+              >
+                <RotateCcw className="w-2.5 h-2.5" /> Atur Ulang Data Simulasi
+              </button>
+              <button 
+                onClick={handleClearDatabase}
+                className="text-[10px] text-slate-400 hover:text-rose-600 text-left cursor-pointer transition-colors flex items-center gap-1 font-bold"
+              >
+                <Trash2 className="w-2.5 h-2.5 text-rose-500" /> Kosongkan Semua Data Inputan
+              </button>
+            </div>
           </div>
 
         </section>
@@ -5649,7 +5821,9 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           {activeTab === 'all-records' && (
             <div className="flex flex-col gap-6 font-sans">
               
-              {selectedRecord ? (
+              {cloudLoading ? (
+                <BentoDetailsSkeleton />
+              ) : selectedRecord ? (
                 <BentoRecordDetails
                   rec={selectedRecord}
                   onPrint={handlePrintSlip}
@@ -5663,7 +5837,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   isSyncingSheets={syncingRecordId === selectedRecord.id}
                 />
               ) : (
-                <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-450 flex flex-col items-center justify-center gap-3 shadow-xs">
+                <div className="bg-white rounded-2xl border border-slate-150 p-12 text-center text-slate-450 flex flex-col items-center justify-center gap-3 shadow-xs">
                   <FileText className="w-12 h-12 text-slate-200" />
                   <p className="text-sm font-bold">Belum Ada Data Kunjungan Terpilih</p>
                   <p className="text-xs text-slate-400 max-w-sm leading-relaxed">
@@ -6743,17 +6917,22 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
                     TELEMETRI GEOLOKASI (KUNJUNGAN FISIK LAPANGAN)
                   </span>
-                  <button 
-                    type="button"
-                    onClick={async () => {
-                      const geo = await getGeotagCoordinates();
-                      setVerifierLat(geo.latitude);
-                      setVerifierLng(geo.longitude);
-                    }}
-                    className="text-[9px] text-sky-400 hover:text-sky-300 font-extrabold hover:underline font-sans cursor-pointer uppercase tracking-tight"
-                  >
-                    Segarkan GPS
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[8.5px] bg-emerald-500/15 text-emerald-400 font-black px-2 py-0.5 rounded-md border border-emerald-500/30 uppercase tracking-wider animate-pulse flex items-center gap-1">
+                      📡 Auto-GPS Aktif
+                    </span>
+                    <button 
+                      type="button"
+                      onClick={async () => {
+                        const geo = await getGeotagCoordinates();
+                        setVerifierLat(geo.latitude);
+                        setVerifierLng(geo.longitude);
+                      }}
+                      className="text-[9px] text-sky-400 hover:text-sky-300 font-extrabold hover:underline font-sans cursor-pointer uppercase tracking-tight"
+                    >
+                      Segarkan GPS
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs font-mono">
                   <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80">
