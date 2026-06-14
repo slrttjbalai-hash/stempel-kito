@@ -23,8 +23,12 @@ import {
   Users, 
   TrendingUp, 
   PieChart as PieIcon, 
-  Map
+  Map,
+  FileText,
+  Download,
+  Calendar
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import GeotagHeatmapMap from './GeotagHeatmapMap';
 
 interface DashboardSummaryProps {
@@ -33,6 +37,468 @@ interface DashboardSummaryProps {
 }
 
 export default function DashboardSummary({ records, onSelectRecord }: DashboardSummaryProps) {
+  // State for Monthly Report Selector (Auto prefilled with current Month & Year of running date)
+  const monthsIndo = useMemo(() => [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ], []);
+
+  const now = useMemo(() => new Date(), []);
+  const [selectedMonth, setSelectedMonth] = useState(monthsIndo[now.getMonth()]);
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+
+  // Filter records for the selected Month & Year
+  const filteredMonthlyRecords = useMemo(() => {
+    return records.filter(r => {
+      const dateStr = r.hariTanggal || '';
+      const lowerStr = dateStr.toLowerCase();
+      const targetMonthLower = selectedMonth.toLowerCase();
+      const targetYearStr = selectedYear.toString();
+      
+      // Look for Month name and Year in the input date string (e.g. "Senin, 01 Juni 2026")
+      if (lowerStr.includes(targetMonthLower) && lowerStr.includes(targetYearStr)) {
+        return true;
+      }
+      
+      // Fallback: Date parsing
+      const parsedDate = new Date(dateStr);
+      if (!isNaN(parsedDate.getTime())) {
+        if (monthsIndo[parsedDate.getMonth()].toLowerCase() === targetMonthLower && parsedDate.getFullYear() === selectedYear) {
+          return true;
+        }
+      }
+      
+      // Fallback 2: Check check-in timestamp (tanggalPemeriksaan)
+      const examStr = r.tanggalPemeriksaan || '';
+      const examLower = examStr.toLowerCase();
+      if (examLower.includes(targetMonthLower) && examLower.includes(targetYearStr)) {
+        return true;
+      }
+      
+      return false;
+    });
+  }, [records, selectedMonth, selectedYear, monthsIndo]);
+
+  // Summarize visit count per sub-district (Kecamatan) for this filtered month
+  const monthlyKecamatanSummary = useMemo(() => {
+    const standardKec = [
+      'Tanjungbalai Selatan',
+      'Tanjungbalai Utara',
+      'Sei Tualang Raso',
+      'Teluk Nibung',
+      'Datuk Bandar',
+      'Datuk Bandar Timur'
+    ];
+    
+    const otherKec = new Set<string>();
+    filteredMonthlyRecords.forEach(r => {
+      if (r.kecamatan) {
+        const trimmed = r.kecamatan.trim();
+        if (trimmed && !standardKec.some(sk => sk.toLowerCase() === trimmed.toLowerCase())) {
+          otherKec.add(trimmed);
+        }
+      }
+    });
+    
+    const allKec = [...standardKec, ...Array.from(otherKec)];
+    
+    return allKec.map(kec => {
+      const recordsInKec = filteredMonthlyRecords.filter(r => (r.kecamatan || '').trim().toLowerCase() === kec.toLowerCase());
+      const total = recordsInKec.length;
+      const visited = recordsInKec.filter(r => r.statusKunjungan === 'Sudah Dikunjungi').length;
+      const pending = total - visited;
+      const percentage = total > 0 ? Math.round((visited / total) * 100) : 0;
+      
+      return {
+        kecamatan: kec,
+        total,
+        visited,
+        pending,
+        percentage
+      };
+    }).filter(k => k.total > 0 || standardKec.includes(k.kecamatan));
+  }, [filteredMonthlyRecords]);
+
+  // Premium PDF Monthly Report Exporter with Kop Surat and Auto Page Breaks
+  const handleExportMonthlyPDF = () => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const docWidth = 210;
+    const docHeight = 297;
+    const leftMargin = 15;
+    const rightMargin = 15;
+    const usableWidth = docWidth - leftMargin - rightMargin;
+
+    let totalPages = 1;
+
+    // Inner page header callback
+    const startNewPage = () => {
+      doc.addPage();
+      totalPages++;
+      
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184); // slate-400
+      doc.text(`LAPORAN BULANAN SLRT KITO   |   Bulan: ${selectedMonth} ${selectedYear}`, leftMargin, 12);
+      
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.setLineWidth(0.2);
+      doc.line(leftMargin, 14, docWidth - rightMargin, 14);
+      return 20; // content starts at target Y
+    };
+
+    let currentY = 15;
+
+    const checkSpaceAndBreaks = (heightNeeded: number) => {
+      if (currentY + heightNeeded > 270) {
+        currentY = startNewPage();
+      }
+      return currentY;
+    };
+
+    // Letterhead (KOP SURAT)
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(30, 41, 59);
+    doc.text("PEMERINTAH KOTA TANJUNGBALAI", docWidth / 2, currentY, { align: 'center' });
+    
+    currentY += 5;
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(15, 118, 110); // teal-700
+    doc.text("DINAS SOSIAL - SEKRETARIAT SLRT KITO", docWidth / 2, currentY, { align: 'center' });
+    
+    currentY += 4.5;
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text("Jl. Jenderal Sudirman No. 12 Tanjungbalai, Kode Pos: 21321, Sumatera Utara", docWidth / 2, currentY, { align: 'center' });
+    
+    currentY += 4;
+    doc.setFont('Helvetica', 'oblique');
+    doc.setFontSize(7.5);
+    doc.text("Email: slrttjbalai@gmail.com   |   Sistem Integrasi Penanganan Kemiskinan Berbasis Cloud", docWidth / 2, currentY, { align: 'center' });
+    
+    currentY += 3;
+    doc.setDrawColor(15, 118, 110);
+    doc.setLineWidth(0.6);
+    doc.line(leftMargin, currentY, docWidth - rightMargin, currentY);
+    
+    currentY += 1.5;
+    doc.setDrawColor(15, 118, 110);
+    doc.setLineWidth(0.2);
+    doc.line(leftMargin, currentY, docWidth - rightMargin, currentY);
+
+    currentY += 8;
+
+    // Report Title
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text("LAPORAN BULANAN MONITORING & CAPAIAN VERIFIKASI LAPANGAN", docWidth / 2, currentY, { align: 'center' });
+    
+    currentY += 5;
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Periode Laporan: Bulan ${selectedMonth} ${selectedYear}`, docWidth / 2, currentY, { align: 'center' });
+    
+    currentY += 4.5;
+    const nowFormatted = new Date().toLocaleString('id-ID', {
+      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+    doc.setFont('Helvetica', 'oblique');
+    doc.setFontSize(7.5);
+    doc.text(`Waktu Cetak: ${nowFormatted} WIB`, docWidth / 2, currentY, { align: 'center' });
+
+    currentY += 8;
+
+    // SECTION 1: STATISTICS CARDS
+    checkSpaceAndBreaks(35);
+    
+    doc.setFillColor(241, 245, 249);
+    doc.rect(leftMargin, currentY, usableWidth, 6, 'F');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(15, 118, 110);
+    doc.text("I. RINGKASAN CAPAIAN DOKUMEN ADUAN BULANAN", leftMargin + 3, currentY + 4.5);
+    
+    currentY += 10;
+
+    const totalAduan = filteredMonthlyRecords.length;
+    const selesaiKunjungan = filteredMonthlyRecords.filter(r => r.statusKunjungan === 'Sudah Dikunjungi').length;
+    const sisaAntrean = totalAduan - selesaiKunjungan;
+    const rasioCapaian = totalAduan > 0 ? Math.round((selesaiKunjungan / totalAduan) * 100) : 0;
+
+    const cardSpacing = 4;
+    const cardWidth = (usableWidth - (cardSpacing * 3)) / 4;
+
+    // Card 1
+    doc.setFillColor(248, 250, 252);
+    doc.rect(leftMargin, currentY, cardWidth, 18, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(leftMargin, currentY, cardWidth, 18, 'S');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text("TOTAL ADUAN", leftMargin + 3, currentY + 5);
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(30, 41, 59);
+    doc.text(totalAduan.toString(), leftMargin + 3, currentY + 12);
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.text("Kasus terdaftar", leftMargin + 3, currentY + 16);
+
+    // Card 2
+    let offset = leftMargin + cardWidth + cardSpacing;
+    doc.setFillColor(248, 250, 252);
+    doc.rect(offset, currentY, cardWidth, 18, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(offset, currentY, cardWidth, 18, 'S');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(16, 185, 129);
+    doc.text("AUDIT SELESAI", offset + 3, currentY + 5);
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(16, 185, 129);
+    doc.text(selesaiKunjungan.toString(), offset + 3, currentY + 12);
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(100, 116, 139);
+    doc.text("Kunjungan tuntas", offset + 3, currentY + 16);
+
+    // Card 3
+    offset = offset + cardWidth + cardSpacing;
+    doc.setFillColor(248, 250, 252);
+    doc.rect(offset, currentY, cardWidth, 18, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(offset, currentY, cardWidth, 18, 'S');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(217, 119, 6);
+    doc.text("SISA ANTREAN", offset + 3, currentY + 5);
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(217, 119, 6);
+    doc.text(sisaAntrean.toString(), offset + 3, currentY + 12);
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(100, 116, 139);
+    doc.text("Menunggu survei", offset + 3, currentY + 16);
+
+    // Card 4
+    offset = offset + cardWidth + cardSpacing;
+    doc.setFillColor(15, 118, 110);
+    doc.rect(offset, currentY, cardWidth, 18, 'F');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(255, 255, 255);
+    doc.text("RASIO CAPAIAN", offset + 3, currentY + 5);
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text(`${rasioCapaian}%`, offset + 3, currentY + 12);
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.text("Progres penyelesaian", offset + 3, currentY + 16);
+
+    currentY += 24;
+
+    // SECTION 2: KECAMATAN BREAKDOWN TABLE
+    checkSpaceAndBreaks(60);
+
+    doc.setFillColor(241, 245, 249);
+    doc.rect(leftMargin, currentY, usableWidth, 6, 'F');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(15, 118, 110);
+    doc.text("II. RINGKASAN DISTRIBUSI AUDIT KUNJUNGAN PER KECAMATAN", leftMargin + 3, currentY + 4.5);
+
+    currentY += 10;
+
+    // Header
+    doc.setFillColor(15, 118, 110);
+    doc.rect(leftMargin, currentY, usableWidth, 8, 'F');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text("No", leftMargin + 3, currentY + 5.5);
+    doc.text("Kecamatan", leftMargin + 12, currentY + 5.5);
+    doc.text("Total Aduan", leftMargin + 75, currentY + 5.5, { align: 'center' });
+    doc.text("Sudah Dikunjungi", leftMargin + 105, currentY + 5.5, { align: 'center' });
+    doc.text("Sisa Antrean", leftMargin + 135, currentY + 5.5, { align: 'center' });
+    doc.text("Persentase Capaian", leftMargin + 165, currentY + 5.5, { align: 'center' });
+
+    currentY += 8;
+
+    let idx = 1;
+    let sumTotal = 0;
+    let sumVisited = 0;
+    let sumPending = 0;
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(30, 41, 59);
+
+    monthlyKecamatanSummary.forEach((row) => {
+      if (idx % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(leftMargin, currentY, usableWidth, 6.5, 'F');
+      }
+      
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.15);
+      doc.line(leftMargin, currentY + 6.5, docWidth - rightMargin, currentY + 6.5);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text(idx.toString(), leftMargin + 3, currentY + 4.5);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(row.kecamatan, leftMargin + 12, currentY + 4.5);
+      doc.text(row.total.toString(), leftMargin + 75, currentY + 4.5, { align: 'center' });
+      doc.text(row.visited.toString(), leftMargin + 105, currentY + 4.5, { align: 'center' });
+      doc.text(row.pending.toString(), leftMargin + 135, currentY + 4.5, { align: 'center' });
+      doc.setFont('Helvetica', 'bold');
+      doc.text(`${row.percentage}%`, leftMargin + 165, currentY + 4.5, { align: 'center' });
+      doc.setFont('Helvetica', 'normal');
+
+      sumTotal += row.total;
+      sumVisited += row.visited;
+      sumPending += row.pending;
+      idx++;
+      currentY += 6.5;
+    });
+
+    // Total row
+    doc.setFillColor(241, 245, 249);
+    doc.rect(leftMargin, currentY, usableWidth, 8, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.line(leftMargin, currentY, docWidth - rightMargin, currentY);
+    doc.line(leftMargin, currentY + 8, docWidth - rightMargin, currentY + 8);
+
+    doc.setFont('Helvetica', 'bold');
+    doc.text("TOTAL KOTA TANJUNGBALAI", leftMargin + 12, currentY + 5.5);
+    doc.text(sumTotal.toString(), leftMargin + 75, currentY + 5.5, { align: 'center' });
+    doc.text(sumVisited.toString(), leftMargin + 105, currentY + 5.5, { align: 'center' });
+    doc.text(sumPending.toString(), leftMargin + 135, currentY + 5.5, { align: 'center' });
+    
+    const overallPercent = sumTotal > 0 ? Math.round((sumVisited / sumTotal) * 100) : 0;
+    doc.text(`${overallPercent}%`, leftMargin + 165, currentY + 5.5, { align: 'center' });
+
+    currentY += 15;
+
+    // SECTION 3: COMPLETED DETAILED LIST
+    const completedList = filteredMonthlyRecords.filter(r => r.statusKunjungan === 'Sudah Dikunjungi');
+    
+    if (completedList.length > 0) {
+      checkSpaceAndBreaks(25);
+      doc.setFillColor(241, 245, 249);
+      doc.rect(leftMargin, currentY, usableWidth, 6, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(15, 118, 110);
+      doc.text("III. RINCIAN DAFTAR KASUS SELESAI VERIFIKASI FISIK", leftMargin + 3, currentY + 4.5);
+      
+      currentY += 10;
+
+      doc.setFillColor(71, 85, 105);
+      doc.rect(leftMargin, currentY, usableWidth, 7, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(255, 255, 255);
+      doc.text("No", leftMargin + 3, currentY + 4.5);
+      doc.text("Nama Klien", leftMargin + 12, currentY + 4.5);
+      doc.text("Kelurahan / Kecamatan", leftMargin + 48, currentY + 4.5);
+      doc.text("Tanggal Audit", leftMargin + 100, currentY + 4.5);
+      doc.text("Status SOS", leftMargin + 132, currentY + 4.5);
+      doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 150, currentY + 4.5);
+
+      currentY += 7;
+
+      let rId = 1;
+      completedList.forEach(item => {
+        checkSpaceAndBreaks(8);
+
+        if (rId % 2 === 0) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(leftMargin, currentY, usableWidth, 6, 'F');
+        }
+
+        doc.setDrawColor(241, 245, 249);
+        doc.setLineWidth(0.1);
+        doc.line(leftMargin, currentY + 6, docWidth - rightMargin, currentY + 6);
+
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.text(rId.toString(), leftMargin + 3, currentY + 4.2);
+        doc.text(item.namaKlien || '-', leftMargin + 12, currentY + 4.2);
+        doc.setFont('Helvetica', 'normal');
+        doc.text(`${item.kelurahan || '-'}, ${item.kecamatan || '-'}`, leftMargin + 48, currentY + 4.2);
+        
+        let tgl = item.tanggalPemeriksaan || item.hariTanggal || '-';
+        if (tgl.includes(',')) {
+          tgl = tgl.split(',')[1].trim();
+        }
+        doc.text(tgl, leftMargin + 100, currentY + 4.2);
+        doc.text(item.status || 'Miskin', leftMargin + 132, currentY + 4.2);
+        doc.text(item.namaFasilitator || '-', leftMargin + 150, currentY + 4.2);
+
+        rId++;
+        currentY += 6;
+      });
+      currentY += 5;
+    }
+
+    // SIGNATURE SECTION
+    checkSpaceAndBreaks(35);
+    
+    currentY += 5;
+    const sigX1 = leftMargin + 10;
+    const sigX2 = docWidth - rightMargin - 65;
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    doc.text("Diverifikasi Oleh,", sigX1, currentY);
+    doc.text("Penanggung Jawab SLRT KITO,", sigX2, currentY);
+    
+    currentY += 18;
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text("( ____________________ )", sigX1, currentY);
+    doc.text("( SLRT TJBALAI ADMIN )", sigX2, currentY);
+    
+    currentY += 4;
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(115, 115, 115);
+    doc.text("Penyelia Data Kelompok Jabatan", sigX1, currentY);
+    doc.text("NIP. 19890520 201212 1 002", sigX2, currentY);
+
+    // Footer decoration on all pages
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.2);
+      doc.line(leftMargin, docHeight - 14, docWidth - rightMargin, docHeight - 14);
+      
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Sekretariat Resmi SLRT KITO - Dinas Sosial Kota Tanjungbalai, Sumatera Utara", leftMargin, docHeight - 10);
+      doc.text(`Halaman ${i} dari ${totalPages}`, docWidth - rightMargin, docHeight - 10, { align: 'right' });
+    }
+
+    const fileName = `Laporan_Bulanan_SLRT_${selectedMonth.replace(/\s+/g, '_')}_${selectedYear}.pdf`;
+    doc.save(fileName);
+  };
+
   // 1. Calculate General Metrics
   const metrics = useMemo(() => {
     const total = records.length;
@@ -293,6 +759,127 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
               {metrics.highPriority}
             </span>
             <span className="text-[9px] text-rose-600 font-bold mt-1 block">Sangat Miskin / Mendesak</span>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION EXPORT: LAPORAN BULANAN GOVTECH INTEGRATED PANEL */}
+      <div id="monthly-export-panel" className="bg-slate-50 rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col gap-4 font-sans">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-700">
+              <FileText className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                Ekspor Dokumen Laporan Bulanan Resmi
+              </h3>
+              <p className="text-[10px] text-slate-500 font-medium italic mt-0.5">
+                Penyaringan otomatis data bulan berjalan &amp; pembuatan tabel rangkuman kunjungan per kecamatan.
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {/* Month selector dropdown */}
+            <div className="flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <select
+                id="select-report-month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-white border border-slate-200 text-xs font-bold text-slate-705 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+              >
+                {monthsIndo.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Year selector dropdown */}
+            <select
+              id="select-report-year"
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="bg-white border border-slate-200 text-xs font-bold text-slate-705 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+            >
+              {[2025, 2026, 2027, 2028].map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Content Panel: Info & Summary Preview */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* Left info desk */}
+          <div className="lg:col-span-4 flex flex-col justify-between gap-4">
+            <div className="text-xs text-slate-600 leading-relaxed">
+              <p className="font-extrabold text-slate-800 mb-1 uppercase tracking-wide text-[10px]">Penyaringan Berkas Bulan Berjalan</p>
+              Sesuai dengan regulasi pelaporan Dinas Sosial Kota Tanjungbalai, modul ini membantu administrasi untuk menerbitkan berkas PDF formal yang merangkum sebaran data di <span className="font-bold text-slate-880">6 Kecamatan</span> berdasarkan tanggal input atau registrasi aduan klien.
+              <p className="mt-3.5 bg-indigo-50/50 p-2.5 border border-indigo-100 rounded-xl text-[11px] text-indigo-950 font-medium leading-normal flex items-start gap-1.5">
+                <span>💡</span>
+                <span>Progres periode <b>{selectedMonth} {selectedYear}</b>: Terhitung <b>{filteredMonthlyRecords.length} aduan</b> terinput, dengan status <b>{filteredMonthlyRecords.filter(r => r.statusKunjungan === 'Sudah Dikunjungi').length} dikunjungi</b>.</span>
+              </p>
+            </div>
+
+            <button
+              id="btn-export-monthly-pdf"
+              onClick={handleExportMonthlyPDF}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-xs hover:shadow-md flex items-center justify-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Unduh PDF Laporan Bulanan
+            </button>
+          </div>
+
+          {/* Right Summary Table Preview */}
+          <div className="lg:col-span-8 bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="bg-slate-100 px-4 py-2 border-b border-slate-200 flex items-center justify-between font-mono text-[9px] font-black text-slate-500 uppercase tracking-wider">
+              <span>PRATINJAU RANGKUMAN KUNJUNGAN PER KECAMATAN ({selectedMonth.toUpperCase()} {selectedYear})</span>
+              <span className="text-[8px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-md font-sans">SINKRON</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs font-sans">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                    <th className="py-2.5 px-3.5">Kecamatan</th>
+                    <th className="py-2.5 px-3.5 text-center">Total Target (Aduan)</th>
+                    <th className="py-2.5 px-3.5 text-center text-emerald-700">Sudah Dikunjungi</th>
+                    <th className="py-2.5 px-3.5 text-center text-amber-700">Belum Dikunjungi</th>
+                    <th className="py-2.5 px-3.5 text-right">Rasio Capaian</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-150 text-slate-700">
+                  {monthlyKecamatanSummary.map((row) => (
+                    <tr key={row.kecamatan} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="py-2.5 px-3.5 font-bold text-slate-800">{row.kecamatan}</td>
+                      <td className="py-2.5 px-3.5 text-center font-mono font-bold text-slate-900">{row.total}</td>
+                      <td className="py-2.5 px-3.5 text-center font-mono font-bold text-emerald-650">{row.visited}</td>
+                      <td className="py-2.5 px-3.5 text-center font-mono font-bold text-amber-605">{row.pending}</td>
+                      <td className="py-2.5 px-3.5 text-right">
+                        <span className={`text-[9.5px] font-black px-1.5 py-0.5 rounded-md border ${
+                          row.percentage === 100 
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-150' 
+                            : row.percentage > 0 
+                            ? 'bg-indigo-50 text-indigo-700 border-indigo-100' 
+                            : 'bg-slate-50 text-slate-400 border-slate-200'
+                        }`}>
+                          {row.percentage}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredMonthlyRecords.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-slate-400 font-bold text-[11px] italic">
+                        Tidak ada data aduan atau kunjungan lapangan terdaftar sepanjang periode {selectedMonth} {selectedYear}.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>

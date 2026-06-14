@@ -35,6 +35,8 @@ import {
   UserCheck
 } from 'lucide-react';
 
+import { motion } from 'motion/react';
+
 import { SLRTRecord, TANJUNGBALAI_LOCATIONS, INITIAL_RECORDS, FacilitatorUser, INITIAL_FACILITATORS, getSafeBase64Url, KRITERIA_SOSIAL_EKONOMI, KRITERIA_KELAYAKAN_HUNI, KRITERIA_BANTUAN_SOSIAL, KELURAHAN_COORDS } from './types';
 import { jsPDF } from 'jspdf';
 import BentoRecordDetails from './components/BentoRecordDetails';
@@ -1037,6 +1039,27 @@ export default function App() {
     }
   }, [activeTab, editingId]);
 
+  // Viewport/context auto-scroll on transitioning to 'Add Record' or opening 'Verifier' modal
+  useEffect(() => {
+    if (activeTab === 'add-record') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (showVerifierModal) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // If there's an internal scrollable panel for the verifier modal (e.g. max-h-[90vh] overflow-y-auto), reset its scroll position too
+      const timer = setTimeout(() => {
+        const verifierInnerElement = document.querySelector('#verifier-modal > div');
+        if (verifierInnerElement) {
+          verifierInnerElement.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [showVerifierModal]);
+
   // Raw Chat Copy-paste parser tool states
   const [rawText, setRawText] = useState('');
   const [parsedPreview, setParsedPreview] = useState<Partial<SLRTRecord> | null>(null);
@@ -1045,6 +1068,7 @@ export default function App() {
   // Dialog notifications / copy triggers
   const [copiedRecordId, setCopiedRecordId] = useState<'list' | 'tbl' | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showDeleteFacilitatorConfirm, setShowDeleteFacilitatorConfirm] = useState<string | null>(null);
 
   // Auto-save changes to localStorage (strip photos to keep size ultra micro and prevent QuotaExceededError)
   useEffect(() => {
@@ -1361,52 +1385,50 @@ export default function App() {
 
   // 5. Admin Action: Delete Facilitator Account with Google Sheets update
   const handleDeleteFacilitator = async (id: string) => {
-    if (window.confirm("Apakah Anda yakin ingin menghapus akun Fasilitator ini dari sistem?")) {
-      // Save to local deleted facilitator list to prevent cloud sync restoring it
-      try {
-        const deletedFasString = localStorage.getItem('slrt_deleted_facilitator_ids') || '[]';
-        const deletedFasIds = JSON.parse(deletedFasString);
-        if (!deletedFasIds.includes(id)) {
-          deletedFasIds.push(id);
-          localStorage.setItem('slrt_deleted_facilitator_ids', JSON.stringify(deletedFasIds));
-        }
-      } catch (e) {
-        console.error("Gagal menyimpan ID fasilitator terhapus:", e);
+    // Save to local deleted facilitator list to prevent cloud sync restoring it
+    try {
+      const deletedFasString = localStorage.getItem('slrt_deleted_facilitator_ids') || '[]';
+      const deletedFasIds = JSON.parse(deletedFasString);
+      if (!deletedFasIds.includes(id)) {
+        deletedFasIds.push(id);
+        localStorage.setItem('slrt_deleted_facilitator_ids', JSON.stringify(deletedFasIds));
       }
-
-      // Purge any local status override for this deleted accounts
-      try {
-        const savedOverrides = localStorage.getItem('slrt_status_overrides');
-        if (savedOverrides) {
-          const overrides = JSON.parse(savedOverrides);
-          delete overrides[id];
-          localStorage.setItem('slrt_status_overrides', JSON.stringify(overrides));
-        }
-      } catch (e) {
-        console.error("Gagal menghapus override status lokal:", e);
-      }
-
-      setFacilitators(prev => prev.filter(f => f.id !== id));
-      
-      // Delete facilitator from Google Sheets database (bypassing CORS)
-      try {
-        await fetch(GOOGLE_SHEETS_API_URL, {
-          method: "POST",
-          mode: "no-cors",
-          headers: {
-            "Content-Type": "text/plain"
-          },
-          body: JSON.stringify({
-            action: 'deleteFacilitator',
-            id: id
-          })
-        });
-      } catch (err) {
-        console.error("Gagal menghapus fasilitas di database cloud:", err);
-      }
-      
-      alert("Akun Fasilitator berhasil dihapus dari sistem.");
+    } catch (e) {
+      console.error("Gagal menyimpan ID fasilitator terhapus:", e);
     }
+
+    // Purge any local status override for this deleted accounts
+    try {
+      const savedOverrides = localStorage.getItem('slrt_status_overrides');
+      if (savedOverrides) {
+        const overrides = JSON.parse(savedOverrides);
+        delete overrides[id];
+        localStorage.setItem('slrt_status_overrides', JSON.stringify(overrides));
+      }
+    } catch (e) {
+      console.error("Gagal menghapus override status lokal:", e);
+    }
+
+    setFacilitators(prev => prev.filter(f => f.id !== id));
+    
+    // Delete facilitator from Google Sheets database (bypassing CORS)
+    try {
+      await fetch(GOOGLE_SHEETS_API_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: {
+          "Content-Type": "text/plain"
+        },
+        body: JSON.stringify({
+          action: 'deleteFacilitator',
+          id: id
+        })
+      });
+    } catch (err) {
+      console.error("Gagal menghapus fasilitas di database cloud:", err);
+    }
+    
+    alert("Akun Fasilitator berhasil dihapus dari sistem.");
   };
 
   // Preloaded templates for Smart Parser testing
@@ -4097,14 +4119,14 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 )}
 
                 <form onSubmit={handleWargaSubmitReport} className="flex flex-col gap-5 text-xs">
-                  {/* SECTION B - IDENTITAS */}
+                  {/* SECTION A - IDENTITAS */}
                   <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-150 flex flex-col gap-4">
                     <h4 className="text-[11px] font-black text-amber-700 uppercase tracking-widest pb-1 border-b border-rose-200/50">
-                      B. Profil Identitas Kepala Keluarga &amp; Klien
+                      A. Profil Identitas Kepala Keluarga &amp; Klien
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">5. Nama Klien Utama *</label>
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">1. Nama Klien Utama *</label>
                         <input
                           type="text"
                           required
@@ -4116,7 +4138,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       </div>
 
                       <div>
-                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">9. No. Telpon / HP Aktif *</label>
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">2. No. Telpon / HP Aktif *</label>
                         <input
                           type="tel"
                           required
@@ -4146,7 +4168,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       </div>
 
                       <div>
-                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">2. Kelurahan Klien *</label>
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">4. Kelurahan Klien *</label>
                         <select
                           value={wargaAddKelurahan}
                           onChange={(e) => setWargaAddKelurahan(e.target.value)}
@@ -4161,7 +4183,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
-                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">NIK Klien (16 Digit) *</label>
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">5. NIK Klien (16 Digit) *</label>
                         <input
                           type="text"
                           maxLength={16}
@@ -4239,7 +4261,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-black text-slate-505 block mb-1 uppercase tracking-wider">10. Dokumen Yang Dibawa Klien</label>
+                        <label className="text-[10px] font-black text-slate-505 block mb-1 uppercase tracking-wider">9. Dokumen Yang Dibawa Klien</label>
                         <input
                           type="text"
                           placeholder="Contoh: KK, KTP, Surat SKTM..."
@@ -4251,14 +4273,14 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     </div>
                   </div>
 
-                  {/* SECTION C - SOSIAL EKONOMI */}
+                  {/* SECTION B - SOSIAL EKONOMI */}
                   <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-150 flex flex-col gap-4">
                     <h4 className="text-[11px] font-black text-amber-700 uppercase tracking-widest pb-1 border-b border-rose-200/50">
-                      C. Indikator Sosial Ekonomi &amp; Kelayakan Hunian
+                      B. Indikator Sosial Ekonomi &amp; Kelayakan Hunian
                     </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                       <div>
-                        <label className="text-[10px] font-black text-slate-505 block mb-1 uppercase tracking-wider">11. Status Kesejahteraan Klien</label>
+                        <label className="text-[10px] font-black text-slate-505 block mb-1 uppercase tracking-wider">10. Status Kesejahteraan Klien</label>
                         <select
                           value={wargaAddStatus}
                           onChange={(e) => setWargaAddStatus(e.target.value)}
@@ -4272,7 +4294,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       </div>
 
                       <div>
-                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">13. Status Kepemilikan Rumah</label>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">12. Status Kepemilikan Rumah</label>
                         <select
                           value={wargaAddStatusRumah}
                           onChange={(e) => setWargaAddStatusRumah(e.target.value)}
@@ -4286,7 +4308,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       </div>
 
                       <div>
-                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">14. Jenis Penerangan Utama</label>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">13. Jenis Penerangan Utama</label>
                         <select
                           value={wargaAddJenisPenerangan}
                           onChange={(e) => setWargaAddJenisPenerangan(e.target.value)}
@@ -4300,7 +4322,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       </div>
 
                       <div>
-                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">15. Kondisi Fasilitas MCK</label>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">14. Kondisi Fasilitas MCK</label>
                         <select
                           value={wargaAddMck}
                           onChange={(e) => setWargaAddMck(e.target.value)}
@@ -4314,7 +4336,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       </div>
 
                       <div>
-                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">16. Est. Pendapatan KRT Perbulan</label>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">15. Est. Pendapatan KRT Perbulan</label>
                         <input
                           type="text"
                           placeholder="Contoh: Rp 600.000"
@@ -4326,7 +4348,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
                       {/* MULTI-SELECT CHECKBOXES FOR BANTUAN YANG SUDAH DIPEROLEH */}
                       <div className="col-span-1 sm:col-span-2 md:col-span-3">
-                        <label className="text-[10px] font-black text-slate-550 block mb-1.5 uppercase tracking-wider">12. Program Bantuan Sosial yang Pernah Diterima (Pilih Semua yang Sesuai)</label>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1.5 uppercase tracking-wider">11. Program Bantuan Sosial yang Pernah Diterima (Pilih Semua yang Sesuai)</label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-40 overflow-y-auto">
                           {KRITERIA_BANTUAN_SOSIAL.map((bantuan) => {
                             const isChecked = wargaAddBantuanDiterimaList.includes(bantuan);
@@ -4353,7 +4375,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
                       {/* MULTI-SELECT CHECKBOXES FOR INDIKATOR SOSIAL EKONOMI */}
                       <div className="col-span-1 sm:col-span-2 md:col-span-3">
-                        <label className="text-[10px] font-black text-slate-550 block mb-1.5 uppercase tracking-wider">Indikator Kerentanan Sosial Ekonomi (Pilih Semua yang Sesuai)</label>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1.5 uppercase tracking-wider">16. Indikator Kerentanan Sosial Ekonomi (Pilih Semua yang Sesuai)</label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-52 overflow-y-auto">
                           {KRITERIA_SOSIAL_EKONOMI.map((kriteria) => {
                             const isChecked = wargaAddIndikatorSosialEkonomi.includes(kriteria);
@@ -4380,7 +4402,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
                       {/* MULTI-SELECT CHECKBOXES FOR KELAYAKAN HUNI */}
                       <div className="col-span-1 sm:col-span-2 md:col-span-3">
-                        <label className="text-[10px] font-black text-slate-550 block mb-1.5 uppercase tracking-wider">Kondisi Fisik Hunian / Kelayakan Rumah (Pilih Semua yang Sesuai)</label>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1.5 uppercase tracking-wider">17. Kondisi Fisik Hunian / Kelayakan Rumah (Pilih Semua yang Sesuai)</label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-52 overflow-y-auto">
                           {KRITERIA_KELAYAKAN_HUNI.map((kriteria) => {
                             const isChecked = wargaAddKelayakanHuni.includes(kriteria);
@@ -4408,14 +4430,14 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     </div>
                   </div>
 
-                  {/* SECTION D - ADUAN */}
+                  {/* SECTION C - ADUAN */}
                   <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-150 flex flex-col gap-4">
                     <h4 className="text-[11px] font-black text-amber-700 uppercase tracking-widest pb-1 border-b border-rose-200/50">
-                      D. Substansi Penyaluran Pengaduan
+                      C. Substansi Penyaluran Pengaduan
                     </h4>
                     <div className="grid grid-cols-1 gap-4">
                       <div>
-                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">17. Rincian Pengaduan / Keluhan Klien *</label>
+                        <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">18. Rincian Pengaduan / Keluhan Klien *</label>
                         <textarea
                           required
                           rows={3}
@@ -4427,7 +4449,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       </div>
 
                       <div>
-                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">18. Jenis Layanan Yang Diinginkan / Diusulkan</label>
+                        <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">19. Jenis Layanan Yang Diinginkan / Diusulkan</label>
                         <input
                           type="text"
                           placeholder="Contoh: Reaktivasi KIS PBI, Bedah Rumah RTLH, Beasiswa PIP..."
@@ -5346,84 +5368,92 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               </div>
 
               {/* Sidebar list visitors queue */}
-              <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-                {filteredRecords.length === 0 ? (
-                  <div className="p-8 text-center text-slate-400 text-xs">
-                    Tidak ada kunjungan cocok filter
-                  </div>
-                ) : (
-                  filteredRecords.map((rec) => {
-                    const isSelected = selectedRecordId === rec.id;
-                    const isSangatMiskin = rec.status.toLowerCase().includes('sangat');
-                    const isRentan = rec.status.toLowerCase().includes('rentan');
-                    return (
-                      <div
-                        key={rec.id}
-                        onClick={() => setSelectedRecordId(rec.id)}
-                        className={`p-3 cursor-pointer transition-colors relative group ${
-                          isSelected 
-                            ? 'bg-indigo-50 border-r-4 border-indigo-600' 
-                            : 'hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start gap-1">
-                          <div>
-                            <p className="text-[9px] font-black uppercase text-indigo-600/80 tracking-wide font-mono">
-                              {rec.kecamatan}
-                            </p>
-                            <p className="text-xs font-bold text-slate-800 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                              {rec.namaKlien}
-                              {rec.isHighPriority && (
-                                <span className="text-[7.5px] font-black px-1 py-0.5 rounded-md bg-rose-600 text-white uppercase tracking-wider animate-pulse inline-block">
-                                  🚨 PRIORITAS
-                                </span>
-                              )}
-                            </p>
-                            <p className="text-[10px] text-slate-500 mt-0.5 font-sans font-medium">
-                              Saran: <span className="text-indigo-900 font-extrabold">{rec.status}</span>
-                            </p>
-                          </div>
-                          
-                          <div className="flex flex-col items-end gap-1.5 shrink-0">
-                            <span className="text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase bg-emerald-50 text-emerald-800 border border-emerald-250 font-mono tracking-tight shrink-0 whitespace-nowrap">
-                              {rec.kelurahan}
-                            </span>
+              <div className="flex-1 overflow-y-auto">
+                <motion.div
+                  key={`${searchQuery}_${filterKecamatan}_${filterKelurahan}_${filterStatus}_${filterKunjungan}_${filterVerifStartDate}_${filterVerifEndDate}_${filteredRecords.length}`}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, ease: "easeOut" }}
+                  className="divide-y divide-slate-100"
+                >
+                  {filteredRecords.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 text-xs">
+                      Tidak ada kunjungan cocok filter
+                    </div>
+                  ) : (
+                    filteredRecords.map((rec) => {
+                      const isSelected = selectedRecordId === rec.id;
+                      const isSangatMiskin = rec.status.toLowerCase().includes('sangat');
+                      const isRentan = rec.status.toLowerCase().includes('rentan');
+                      return (
+                        <div
+                          key={rec.id}
+                          onClick={() => setSelectedRecordId(rec.id)}
+                          className={`p-3 cursor-pointer transition-colors relative group ${
+                            isSelected 
+                              ? 'bg-indigo-50 border-r-4 border-indigo-600' 
+                              : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start gap-1">
+                            <div>
+                              <p className="text-[9px] font-black uppercase text-indigo-600/80 tracking-wide font-mono">
+                                {rec.kecamatan}
+                              </p>
+                              <p className="text-xs font-bold text-slate-800 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                {rec.namaKlien}
+                                {rec.isHighPriority && (
+                                  <span className="text-[7.5px] font-black px-1 py-0.5 rounded-md bg-rose-600 text-white uppercase tracking-wider animate-pulse inline-block">
+                                    🚨 PRIORITAS
+                                  </span>
+                                )}
+                              </p>
+                              <p className="text-[10px] text-slate-500 mt-0.5 font-sans font-medium">
+                                Saran: <span className="text-indigo-900 font-extrabold">{rec.status}</span>
+                              </p>
+                            </div>
                             
-                            <span className={`text-[7.5px] font-black px-1.5 py-0.5 rounded-full uppercase border tracking-wide whitespace-nowrap shrink-0 flex items-center gap-1 ${
-                              rec.statusKunjungan === 'Sudah Dikunjungi'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : 'bg-amber-50 text-amber-800 border-amber-200'
-                            }`}>
-                              <span className={`w-1 h-1 rounded-full ${
-                                rec.statusKunjungan === 'Sudah Dikunjungi' ? 'bg-emerald-600' : 'bg-amber-500 animate-pulse'
-                              }`}></span>
-                              {rec.statusKunjungan === 'Sudah Dikunjungi' ? 'Sudah Dikunjungi' : 'Belum Dikunjungi'}
-                            </span>
-                            
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleEditRecordSetup(rec); }}
-                                className="p-1 hover:bg-slate-200 hover:text-indigo-600 rounded"
-                                title="Ubah data"
-                              >
-                                <Edit className="w-3 h-3" />
-                              </button>
-                              {userRole === 'admin' && (
+                            <div className="flex flex-col items-end gap-1.5 shrink-0">
+                              <span className="text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase bg-emerald-50 text-emerald-800 border border-emerald-250 font-mono tracking-tight shrink-0 whitespace-nowrap">
+                                {rec.kelurahan}
+                              </span>
+                              
+                              <span className={`text-[7.5px] font-black px-1.5 py-0.5 rounded-full uppercase border tracking-wide whitespace-nowrap shrink-0 flex items-center gap-1 ${
+                                rec.statusKunjungan === 'Sudah Dikunjungi'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                              }`}>
+                                <span className={`w-1 h-1 rounded-full ${
+                                  rec.statusKunjungan === 'Sudah Dikunjungi' ? 'bg-emerald-600' : 'bg-amber-500 animate-pulse'
+                                }`}></span>
+                                {rec.statusKunjungan === 'Sudah Dikunjungi' ? 'Sudah Dikunjungi' : 'Belum Dikunjungi'}
+                              </span>
+                              
+                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(rec.id); }}
-                                  className="p-1 hover:bg-slate-200 hover:text-rose-600 rounded"
-                                  title="Hapus data"
+                                  onClick={(e) => { e.stopPropagation(); handleEditRecordSetup(rec); }}
+                                  className="p-1 hover:bg-slate-200 hover:text-indigo-600 rounded"
+                                  title="Ubah data"
                                 >
-                                  <Trash2 className="w-3 h-3" />
+                                  <Edit className="w-3 h-3" />
                                 </button>
-                              )}
+                                {userRole === 'admin' && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(rec.id); }}
+                                    className="p-1 hover:bg-slate-200 hover:text-rose-600 rounded"
+                                    title="Hapus data"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })
-                )}
+                      );
+                    })
+                  )}
+                </motion.div>
               </div>
 
               {/* Sidebar trigger to add new */}
@@ -6307,7 +6337,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                               )}
                               <button
                                 type="button"
-                                onClick={() => handleDeleteFacilitator(fac.id)}
+                                onClick={() => setShowDeleteFacilitatorConfirm(fac.id)}
                                 className="text-[10px] text-rose-600 hover:bg-rose-50 hover:text-rose-700 font-extrabold py-1.5 px-2.5 rounded-lg border border-slate-200 transition-colors cursor-pointer"
                                 title="Hapus Akun Permanen"
                               >
@@ -6360,6 +6390,34 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               </button>
               <button
                 onClick={() => handleDeleteRecord(showDeleteConfirm)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Hapus Permanen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteFacilitatorConfirm && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-sm w-full p-6 animate-scaleIn font-sans">
+            <h4 className="text-sm font-extrabold text-slate-900 uppercase">Hapus Akun Petugas?</h4>
+            <p className="text-xs text-slate-500 mt-2.5 leading-relaxed">
+              Apakah Anda benar-benar yakin ingin menghapus akun Fasilitator/Petugas Lapangan ini secara permanen dari database? Tindakan ini tidak dapat dibatalkan.
+            </p>
+            <div className="flex items-center justify-end gap-2.5 mt-5">
+              <button
+                onClick={() => setShowDeleteFacilitatorConfirm(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-650 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => {
+                  handleDeleteFacilitator(showDeleteFacilitatorConfirm);
+                  setShowDeleteFacilitatorConfirm(null);
+                }}
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
               >
                 Hapus Permanen
