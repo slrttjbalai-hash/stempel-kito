@@ -43,6 +43,7 @@ import BentoRecordDetails from './components/BentoRecordDetails';
 import SmartParserTab from './components/SmartParserTab';
 import HelpTab from './components/HelpTab';
 import DashboardSummary from './components/DashboardSummary';
+import NikValidationOverlay from './components/NikValidationOverlay';
 import * as XLSX from 'xlsx';
 import { 
   photosArchiveCache, 
@@ -1009,6 +1010,9 @@ export default function App() {
   const [formHariTanggal, setFormHariTanggal] = useState('');
   const [formNamaKlien, setFormNamaKlien] = useState('');
   const [formNik, setFormNik] = useState('');
+  const [isWargaNikFocused, setIsWargaNikFocused] = useState(false);
+  const [isFormNikFocused, setIsFormNikFocused] = useState(false);
+  const [isRegNikFocused, setIsRegNikFocused] = useState(false);
   const [formPekerjaanKrt, setFormPekerjaanKrt] = useState('');
   const [formNamaKuasa, setFormNamaKuasa] = useState('-');
   const [formAlamatKlien, setFormAlamatKlien] = useState('');
@@ -4182,7 +4186,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
+                      <div className="relative">
                         <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">5. NIK Klien (16 Digit) *</label>
                         <input
                           type="text"
@@ -4190,6 +4194,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                           placeholder="Masukkan 16 digit NIK..."
                           value={wargaAddNik}
                           onChange={(e) => setWargaAddNik(e.target.value.replace(/\D/g, ''))}
+                          onFocus={() => setIsWargaNikFocused(true)}
+                          onBlur={() => setIsWargaNikFocused(false)}
                           className={`w-full bg-white text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none font-mono tracking-widest border transition-all duration-200 ${
                             wargaAddNik.trim().length > 0 && wargaAddNik.trim().length < 16
                               ? 'border-amber-400 focus:ring-1 focus:ring-amber-400 bg-amber-50/10'
@@ -4201,32 +4207,12 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                           }`}
                           required
                         />
-                        {wargaAddNik.trim().length > 0 && wargaAddNik.trim().length < 16 && (
-                          <p className="text-[10px] text-amber-600 mt-1 font-semibold flex items-center gap-1">
-                            ⚠️ Minimal 16 digit ({wargaAddNik.trim().length}/16 digit)
-                          </p>
-                        )}
-                        {wargaAddNik.trim().length === 16 && (() => {
-                          const dupRec = records.find(r => r.nik === wargaAddNik.trim());
-                          if (dupRec) {
-                            return (
-                              <div className="mt-1.5 p-2 bg-rose-50 border border-rose-100 rounded-lg text-[10px] text-rose-700 leading-snug">
-                                <p className="font-extrabold flex items-center gap-1 mb-0.5">
-                                  ❌ NIK TELAH TERDAFTAR!
-                                </p>
-                                <p>Klien: <strong className="font-semibold">{dupRec.namaKlien}</strong></p>
-                                <p>Kecamatan: {dupRec.kecamatan} ({dupRec.kelurahan})</p>
-                                <p>Kunjungan: <span className="underline font-bold">{dupRec.statusKunjungan || 'Belum Dikunjungi'}</span></p>
-                              </div>
-                            );
-                          } else {
-                            return (
-                              <p className="text-[10px] text-emerald-600 mt-1 font-bold flex items-center gap-1">
-                                ✓ NIK valid & siap diregistrasi.
-                              </p>
-                            );
-                          }
-                        })()}
+                        <NikValidationOverlay
+                          nik={wargaAddNik}
+                          type="client"
+                          records={records}
+                          isVisible={isWargaNikFocused || wargaAddNik.trim().length > 0}
+                        />
                       </div>
                       <div>
                         <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider">6. Pekerjaan Pokok KRT</label>
@@ -4893,7 +4879,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     />
                   </div>
 
-                  <div>
+                  <div className="relative">
                     <label className="text-[10px] font-black text-slate-500 block mb-1 uppercase tracking-wider font-display font-black">NIK / ID Pegawai (16 Digit) *</label>
                     <input
                       type="text"
@@ -4901,8 +4887,16 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       maxLength={16}
                       placeholder="Nomor NIK KTP..."
                       value={regNik}
-                      onChange={(e) => setRegNik(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-650"
+                      onChange={(e) => setRegNik(e.target.value.replace(/\D/g, ''))}
+                      onFocus={() => setIsRegNikFocused(true)}
+                      onBlur={() => setIsRegNikFocused(false)}
+                      className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-650 font-mono tracking-widest"
+                    />
+                    <NikValidationOverlay
+                      nik={regNik}
+                      type="facilitator"
+                      facilitators={facilitators}
+                      isVisible={isRegNikFocused || regNik.trim().length > 0}
                     />
                   </div>
                 </div>
@@ -5844,7 +5838,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       />
                     </div>
 
-                    <div>
+                    <div className="relative">
                       <label className="text-[10px] font-black text-slate-550 block mb-1 uppercase tracking-wider">5.1. NIK Klien (16 Digit) *</label>
                       <input
                         type="text"
@@ -5852,6 +5846,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                         placeholder="Masukkan 16 digit NIK..."
                         value={formNik}
                         onChange={(e) => setFormNik(e.target.value.replace(/\D/g, ''))}
+                        onFocus={() => setIsFormNikFocused(true)}
+                        onBlur={() => setIsFormNikFocused(false)}
                         className={`w-full bg-white text-xs px-3 py-2 rounded-lg outline-none font-mono tracking-widest border-2 transition-all duration-200 ${
                           formNik.trim().length > 0 && formNik.trim().length < 16
                             ? 'border-amber-400 focus:border-amber-600 bg-amber-50/10'
@@ -5863,32 +5859,13 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                         }`}
                         required
                       />
-                      {formNik.trim().length > 0 && formNik.trim().length < 16 && (
-                        <p className="text-[10px] text-amber-600 mt-1 font-semibold flex items-center gap-1">
-                          ⚠️ Minimal 16 digit ({formNik.trim().length}/16 digit)
-                        </p>
-                      )}
-                      {formNik.trim().length === 16 && (() => {
-                        const dupRec = records.find(r => r.nik === formNik.trim() && r.id !== editingId);
-                        if (dupRec) {
-                          return (
-                            <div className="mt-1.5 p-2 bg-rose-50 border border-rose-100 rounded-lg text-[10px] text-rose-700 leading-snug">
-                              <p className="font-extrabold flex items-center gap-1 mb-0.5">
-                                ❌ NIK TELAH TERDAFTAR (DUPLIKAT)!
-                              </p>
-                              <p>Klien: <strong className="font-semibold">{dupRec.namaKlien}</strong></p>
-                              <p>Kelurahan: {dupRec.kelurahan} ({dupRec.kecamatan})</p>
-                              <p>Kunjungan: <span className="underline font-bold">{dupRec.statusKunjungan || 'Belum Dikunjungi'}</span></p>
-                            </div>
-                          );
-                        } else {
-                          return (
-                            <p className="text-[10px] text-emerald-600 mt-1 font-bold flex items-center gap-1">
-                              ✓ NIK valid & bersih, siap disimpan.
-                            </p>
-                          );
-                        }
-                      })()}
+                      <NikValidationOverlay
+                        nik={formNik}
+                        type="client"
+                        records={records}
+                        editingId={editingId}
+                        isVisible={isFormNikFocused || formNik.trim().length > 0}
+                      />
                     </div>
 
                     <div>
