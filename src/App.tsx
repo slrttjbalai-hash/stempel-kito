@@ -754,6 +754,63 @@ export default function App() {
     }
   };
 
+  // Force clean sync from cloud: clears local browser overrides so that clean, real-time values from other PCs are loaded instantly
+  const handleForceSynchronizeFromCloud = async () => {
+    const confirmClear = window.confirm(
+      "⚠️ PERINGATAN RE-SINKRONISASI COLD-FORCE:\n\n" +
+      "Tindakan ini akan menghapus salinan data lokal, daftar luring yang tertunda, dan seluruh overrides pada browser ini, " +
+      "kemudian menenggelamkan/mendownload data asli dan terbaru yang ada di database pusat Google Sheets.\n\n" +
+      "Gunakan ini jika Anda ingin melihat perubahan instan yang dikirim dari komputer/PC lain secara bersih.\n\n" +
+      "Apakah Anda yakin ingin melanjutkan?"
+    );
+    if (!confirmClear) return;
+
+    setCloudLoading(true);
+    try {
+      // Clear local states and storage overrides
+      localStorage.removeItem('slrt_records');
+      localStorage.removeItem('slrt_record_overrides');
+      localStorage.removeItem('slrt_deleted_record_ids');
+      
+      // Reset states
+      setSelectedRecordId(null);
+      
+      // Pull fresh data
+      const response = await fetch(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
+      if (response.ok) {
+        const json = await response.json();
+        if (json.records && Array.isArray(json.records)) {
+          const normalized = json.records.filter((rec: any) => {
+            return !rec.isDeleted && 
+                   rec.isDeleted !== 'true' && 
+                   rec.statusKunjungan !== 'Dihapus' && 
+                   rec.statusKunjungan !== 'DELETED';
+          }).map(normalizeRecord);
+          
+          setRecords(normalized);
+          localStorage.setItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(normalized)));
+        }
+        
+        if (json.facilitators && Array.isArray(json.facilitators)) {
+          const reconciled = getReconciledFacilitators(json.facilitators);
+          setFacilitators(reconciled);
+          localStorage.setItem('slrt_facilitators', JSON.stringify(reconciled));
+        }
+        
+        const now = new Date();
+        setLastCloudSync(now.toLocaleTimeString('id-ID'));
+        alert("✓ Sinkronisasi Paksa Berhasil!\nSeluruh cache telah dinetralkan dan data murni yang terbaru dari Google Sheets sukses dimuat.");
+      } else {
+        alert("Gagal menghubungi Google Sheets central. Mohon periksa kembali API URL Google Apps Script Anda.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan saat menyinkronkan data pusat. Pastikan koneksi internet stabil.");
+    } finally {
+      setCloudLoading(false);
+    }
+  };
+
   // Parse User Agent to get friendly device info
   const getDeviceDetails = () => {
     const ua = navigator.userAgent;
@@ -2730,12 +2787,19 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           data: rec
         })
       });
+      
+      // Clear the local override so it doesn't mask cloud updates or conflicts on other machines
+      deleteRecordOverride(rec.id);
+
       if (silent) {
         setBackgroundSyncStatus('success');
         setTimeout(() => setBackgroundSyncStatus('idle'), 4000);
       } else {
         alert(`Berhasil Mengirim Data!\nCatatan pemohon "${rec.namaKlien}" telah disinkronisasikan langsung ke Google Sheets Anda secara real-time.`);
       }
+
+      // Automatically refresh in the background to update client memory
+      await refreshFromCloud(false);
     } catch (err) {
       console.error(err);
       if (silent) {
@@ -4029,6 +4093,16 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               <span className={`w-2 h-2 rounded-full ${cloudLoading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`} />
               {cloudLoading ? 'Menyinkronkan...' : 'Database Terhubung'}
             </button>
+
+            <button
+              onClick={handleForceSynchronizeFromCloud}
+              disabled={cloudLoading}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 hover:bg-rose-100/80 active:scale-95 cursor-pointer transition-all border border-rose-150"
+              title="Klik untuk membersihkan memory cache lokal browser ini dan menarik paksa seluruh data murni langsung dari Google Sheets (Gunakan jika data di PC ini berbeda / tidak sinkron dengan PC lain)"
+            >
+              🧹 Bersihkan Cache &amp; Tarik Cloud
+            </button>
+
             {lastCloudSync && (
               <span className="text-[10px] text-slate-400 font-mono">
                 Aktif: {lastCloudSync}
@@ -5808,6 +5882,17 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   📡 {cloudLoading ? 'Menyinkronkan...' : 'Refresh Tarik Cloud'}
                 </button>
               )}
+
+              {/* Force Sync Option */}
+              <button
+                type="button"
+                onClick={handleForceSynchronizeFromCloud}
+                disabled={cloudLoading}
+                className="w-full mt-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 hover:text-rose-900 py-2.5 px-3 rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all uppercase tracking-wider text-[9.5px] font-extrabold select-none shadow-xs"
+                title="Bersihkan semua cache luring di browser ini dan sinkronisasikan murni dari Google Sheets (Gunakan jika data di PC ini berbeda / tidak sinkron dengan PC lain)"
+              >
+                🧹 Sinkron Paksa &amp; Hapus Cache Browser
+              </button>
 
               {userRole === 'admin' && (
                 <button
