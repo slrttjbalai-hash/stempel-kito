@@ -32,6 +32,7 @@ import { jsPDF } from 'jspdf';
 import GeotagHeatmapMap from './GeotagHeatmapMap';
 
 interface DashboardSummaryProps {
+  key?: string;
   records: SLRTRecord[];
   onSelectRecord?: (recordId: string) => void;
 }

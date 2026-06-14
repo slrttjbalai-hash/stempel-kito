@@ -1143,6 +1143,13 @@ export default function App() {
     }
   }, [showVerifierModal]);
 
+  // Synchronize from central database whenever user opens the statistics summary tab to ensure latest numbers on hosting
+  useEffect(() => {
+    if (activeTab === 'dashboard-summary') {
+      refreshFromCloud(false);
+    }
+  }, [activeTab]);
+
   // Raw Chat Copy-paste parser tool states
   const [rawText, setRawText] = useState('');
   const [parsedPreview, setParsedPreview] = useState<Partial<SLRTRecord> | null>(null);
@@ -6455,6 +6462,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           {/* 4.5. DASHBOARD STATISTICAL SUMMARY TAB */}
           {activeTab === 'dashboard-summary' && (
             <DashboardSummary 
+              key={`dashboard-summary-${activeTab}-${records.length}`}
               records={records} 
               onSelectRecord={(id) => {
                 setSelectedRecordId(id);
