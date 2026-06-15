@@ -1,6 +1,6 @@
 {
-  "name": "Pelayanan dan Pengaduan SLRT Kito",
-  "description": "Sistem informasi administrasi pelayanan dan pengaduan SLRT Kito untuk mendata kunjungan masyarakat secara terstruktur.",
+  "name": "Pelayanan dan Pengaduan STEMPEL Kito",
+  "description": "Sistem informasi administrasi pelayanan dan pengaduan STEMPEL Kito untuk mendata kunjungan masyarakat secara terstruktur.",
   "requestFramePermissions": [
     "camera",
     "geolocation"

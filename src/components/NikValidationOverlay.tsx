@@ -98,7 +98,7 @@ export default function NikValidationOverlay({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, scale: 0.98 }}
           transition={{ duration: 0.18, ease: 'easeOut' }}
-          className="absolute left-0 right-0 z-40 mt-1"
+          className="relative w-full z-10 mt-2"
         >
           <div className="bg-slate-900 border border-slate-800 text-white rounded-xl p-4 shadow-xl text-left font-sans text-xs">
             {/* Header with real-time status */}

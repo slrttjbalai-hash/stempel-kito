@@ -144,7 +144,7 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // slate-400
-      doc.text(`LAPORAN BULANAN SLRT KITO   |   Bulan: ${selectedMonth} ${selectedYear}`, leftMargin, 12);
+      doc.text(`LAPORAN BULANAN STEMPEL KITO   |   Bulan: ${selectedMonth} ${selectedYear}`, leftMargin, 12);
       
       doc.setDrawColor(226, 232, 240); // slate-200
       doc.setLineWidth(0.2);
@@ -171,7 +171,7 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(15, 118, 110); // teal-700
-    doc.text("DINAS SOSIAL - SEKRETARIAT SLRT KITO", docWidth / 2, currentY, { align: 'center' });
+    doc.text("DINAS SOSIAL - SEKRETARIAT STEMPEL KITO", docWidth / 2, currentY, { align: 'center' });
     
     currentY += 4.5;
     doc.setFont('Helvetica', 'normal');
@@ -467,7 +467,7 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
     doc.text("Diverifikasi Oleh,", sigX1, currentY);
-    doc.text("Penanggung Jawab SLRT KITO,", sigX2, currentY);
+    doc.text("Penanggung Jawab STEMPEL KITO,", sigX2, currentY);
     
     currentY += 18;
     doc.setFont('Helvetica', 'bold');
@@ -492,11 +492,11 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
       doc.setFont('Helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);
-      doc.text("Sekretariat Resmi SLRT KITO - Dinas Sosial Kota Tanjungbalai, Sumatera Utara", leftMargin, docHeight - 10);
+      doc.text("Sekretariat Resmi STEMPEL KITO - Dinas Sosial Kota Tanjungbalai, Sumatera Utara", leftMargin, docHeight - 10);
       doc.text(`Halaman ${i} dari ${totalPages}`, docWidth - rightMargin, docHeight - 10, { align: 'right' });
     }
 
-    const fileName = `Laporan_Bulanan_SLRT_${selectedMonth.replace(/\s+/g, '_')}_${selectedYear}.pdf`;
+    const fileName = `Laporan_Bulanan_STEMPEL_${selectedMonth.replace(/\s+/g, '_')}_${selectedYear}.pdf`;
     doc.save(fileName);
   };
 
@@ -687,7 +687,7 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-widest bg-indigo-500/20 text-indigo-300 border border-indigo-400/20 mb-2 font-mono">
-              <TrendingUp className="w-3 h-3 text-indigo-400" /> Analitik Integratif SLRT KITO
+              <TrendingUp className="w-3 h-3 text-indigo-400" /> Analitik Integratif STEMPEL KITO
             </div>
             <h1 className="text-xl md:text-2xl font-black tracking-tight text-white">
               Dasbor Manajemen & Ringkasan Statistik

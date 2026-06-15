@@ -6,7 +6,7 @@ export default function HelpTab() {
   const [copied, setCopied] = useState(false);
 
   const appScriptCode = `/**
- * SLRT KITO Kota Tanjungbalai - Google Sheets Integration Script
+ * STEMPEL KITO Kota Tanjungbalai - Google Sheets Integration Script
  * 
  * Panduan Pengoperasian:
  * 1. Di Google Sheets, buka menu "Ekstensi" (Extensions) -> klik "Apps Script".
@@ -20,7 +20,7 @@ export default function HelpTab() {
  *    - Klik Deploy, setujui izin akses akun Anda, dan salin URL Webapp yang diberikan!
  */
 
-const SHEET_RECORDS = "Laporan SLRT KITO";
+const SHEET_RECORDS = "Laporan STEMPEL KITO";
 const SHEET_FACILITATORS = "Daftar Fasilitator";
 
 // Initial facilitators to pre-fill if the sheet is empty
@@ -130,7 +130,7 @@ function setupSheet() {
   // 2. Setup Facilitators Sheet
   setupFacilitatorSheet();
 
-  SpreadsheetApp.getUi().alert("✅ Sukses menginisiasi tabel Laporan & Daftar Petugas SLRT KITO!");
+  SpreadsheetApp.getUi().alert("✅ Sukses menginisiasi tabel Laporan & Daftar Petugas STEMPEL KITO!");
 }
 
 function setupFacilitatorSheet() {
@@ -199,7 +199,7 @@ function setupFacilitatorSheet() {
 // Membuat Menu Pintasan Kustom di Google Sheets
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu("🟢 Menu SLRT KITO")
+  ui.createMenu("🟢 Menu STEMPEL KITO")
     .addItem("Inisialisasi & Format Ulang Tabel", "setupSheet")
     .addSeparator()
     .addItem("Saring & Ekspor Laporan Terpadu", "filterAndExportIntegrated")
@@ -212,7 +212,7 @@ function filterAndExportIntegrated() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_RECORDS);
   if (!sheet) {
-    SpreadsheetApp.getUi().alert("❌ Error: Tabel Laporan SLRT KITO tidak ditemukan. Silakan lakukan inisialisasi terlebih dahulu!");
+    SpreadsheetApp.getUi().alert("❌ Error: Tabel Laporan STEMPEL KITO tidak ditemukan. Silakan lakukan inisialisasi terlebih dahulu!");
     return;
   }
   
@@ -645,7 +645,7 @@ function syncRecord(data) {
         <div>
           <h3 className="text-lg font-black text-slate-900 flex items-center gap-2 font-display uppercase tracking-tight">
             <BookOpen className="w-5 h-5 text-teal-600 animate-pulse" />
-            Pusat Dokumentasi &amp; Integrasi SLRT KITO
+            Pusat Dokumentasi &amp; Integrasi STEMPEL KITO
           </h3>
           <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
             Panduan lapangan dinas sosial Tanjungbalai beserta skrip otomatisasi integrasi Google Sheets.
@@ -742,7 +742,7 @@ function syncRecord(data) {
             <div>
               <p className="font-bold text-teal-950 uppercase tracking-wide">Inisialisasi Tabel &amp; Sinkronisasi Google Sheets Otomatis</p>
               <p className="mt-1">
-                Gunakan skrip Google Apps Script di bawah ini untuk mengubah lembar kerja Google Sheets Anda menjadi penampung data SLRT KITO Tanjungbalai yang otomatis terformat rapi sesuai baku mutu kedinasan, dilengkapi dengan pembuatan tombol cepat dan sistem Webhook API.
+                Gunakan skrip Google Apps Script di bawah ini untuk mengubah lembar kerja Google Sheets Anda menjadi penampung data STEMPEL KITO Tanjungbalai yang otomatis terformat rapi sesuai baku mutu kedinasan, dilengkapi dengan pembuatan tombol cepat dan sistem Webhook API.
               </p>
             </div>
           </div>
@@ -750,7 +750,7 @@ function syncRecord(data) {
           {/* Code Section */}
           <div className="flex flex-col rounded-xl border border-slate-200 overflow-hidden shadow-xs bg-slate-900">
             <div className="bg-slate-800 px-4 py-2 flex items-center justify-between text-xs text-slate-300 font-mono border-b border-slate-700">
-              <span className="flex items-center gap-1.5"><Terminal className="w-3.5 h-3.5 text-emerald-400" /> SLRT_Kito_Integration.gs</span>
+              <span className="flex items-center gap-1.5"><Terminal className="w-3.5 h-3.5 text-emerald-400" /> STEMPEL_Kito_Integration.gs</span>
               <button
                 onClick={copyToClipboard}
                 className="bg-slate-700 hover:bg-slate-600 active:bg-slate-850 text-white rounded px-2.5 py-1 flex items-center gap-1 transition-all cursor-pointer font-bold text-[11px]"
@@ -782,8 +782,8 @@ function syncRecord(data) {
               <li>Klik menu <b>Ekstensi (Extensions)</b> pada toolbar atas, lalu klik <b>Apps Script</b>.</li>
               <li>Ganti kode default dengan kode yang telah Anda salin di atas.</li>
               <li>Simpan proyek dengan menekan tombol <b>Simpan</b> (disket kecil).</li>
-              <li>Segarkan tab google sheet Anda. Anda akan melihat menu baru bernama <b>🟢 Menu SLRT KITO</b> muncul di samping menu bantuan.</li>
-              <li>Silakan klik <b>🟢 Menu SLRT KITO &gt; Inisialisasi &amp; Format Ulang Tabel</b> untuk membuat baris header toska dinas sosial Tanjungbalai secara instan!</li>
+              <li>Segarkan tab google sheet Anda. Anda akan melihat menu baru bernama <b>🟢 Menu STEMPEL KITO</b> muncul di samping menu bantuan.</li>
+              <li>Silakan klik <b>🟢 Menu STEMPEL KITO &gt; Inisialisasi &amp; Format Ulang Tabel</b> untuk membuat baris header toska dinas sosial Tanjungbalai secara instan!</li>
             </ol>
           </div>
         </div>

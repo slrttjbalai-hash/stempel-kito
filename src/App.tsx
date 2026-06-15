@@ -56,8 +56,24 @@ import {
 
 function parseMonthAndYear(dateStr: string) {
   if (!dateStr) return null;
-  const lower = dateStr.toLowerCase();
+  const lower = dateStr.toLowerCase().trim();
   
+  // Try standard YYYY-MM-DD pattern
+  const matchYMD = lower.match(/\b(20\d{2})[-/](0?[1-9]|1[0-2])[-/](0?[1-9]|[12]\d|3[01])\b/);
+  if (matchYMD) {
+    const year = parseInt(matchYMD[1], 10);
+    const month = parseInt(matchYMD[2], 10);
+    return { month, year, value: year * 12 + month };
+  }
+
+  // Try standard DD-MM-YYYY pattern
+  const matchDMY = lower.match(/\b(0?[1-9]|[12]\d|3[01])[-/](0?[1-9]|1[0-2])[-/](20\d{2})\b/);
+  if (matchDMY) {
+    const year = parseInt(matchDMY[3], 10);
+    const month = parseInt(matchDMY[2], 10);
+    return { month, year, value: year * 12 + month };
+  }
+
   // Extract year which is 4 digits
   const yearMatch = lower.match(/\b(20\d{2})\b/);
   const year = yearMatch ? parseInt(yearMatch[1], 10) : null;
@@ -337,6 +353,21 @@ function normalizeRecord(rec: any): SLRTRecord {
 
   // Parse or default Indikator Sosial Ekonomi
   let indikatorSosialEkonomi = rec.indikatorSosialEkonomi || [];
+  if (typeof indikatorSosialEkonomi === 'string') {
+    try {
+      const trimmed = (indikatorSosialEkonomi as string).trim();
+      if (trimmed.startsWith('[')) {
+        indikatorSosialEkonomi = JSON.parse(trimmed);
+      } else {
+        indikatorSosialEkonomi = trimmed.split(';').map((s: string) => s.trim()).filter(Boolean);
+      }
+    } catch (e) {
+      indikatorSosialEkonomi = [];
+    }
+  }
+  if (!Array.isArray(indikatorSosialEkonomi)) {
+    indikatorSosialEkonomi = [];
+  }
   if (indikatorSosialEkonomi.length === 0) {
     if (rec.status?.toLowerCase().includes('sangat')) {
       indikatorSosialEkonomi = [
@@ -358,6 +389,21 @@ function normalizeRecord(rec: any): SLRTRecord {
 
   // Parse or default Kelayakan Huni
   let kelayakanHuni = rec.kelayakanHuni || [];
+  if (typeof kelayakanHuni === 'string') {
+    try {
+      const trimmed = (kelayakanHuni as string).trim();
+      if (trimmed.startsWith('[')) {
+        kelayakanHuni = JSON.parse(trimmed);
+      } else {
+        kelayakanHuni = trimmed.split(';').map((s: string) => s.trim()).filter(Boolean);
+      }
+    } catch (e) {
+      kelayakanHuni = [];
+    }
+  }
+  if (!Array.isArray(kelayakanHuni)) {
+    kelayakanHuni = [];
+  }
   if (kelayakanHuni.length === 0) {
     if (rec.statusRumah?.toLowerCase().includes('sewa') || rec.statusRumah?.toLowerCase().includes('kontrak')) {
       kelayakanHuni.push("Status tinggal menyewa / sewa bulanan / menumpang keluarga");
@@ -380,6 +426,21 @@ function normalizeRecord(rec: any): SLRTRecord {
 
   // Parse or default Bantuan Diterima List
   let bantuanDiterimaList = rec.bantuanDiterimaList || [];
+  if (typeof bantuanDiterimaList === 'string') {
+    try {
+      const trimmed = (bantuanDiterimaList as string).trim();
+      if (trimmed.startsWith('[')) {
+        bantuanDiterimaList = JSON.parse(trimmed);
+      } else {
+        bantuanDiterimaList = trimmed.split(';').map((s: string) => s.trim()).filter(Boolean);
+      }
+    } catch (e) {
+      bantuanDiterimaList = [];
+    }
+  }
+  if (!Array.isArray(bantuanDiterimaList)) {
+    bantuanDiterimaList = [];
+  }
   if (bantuanDiterimaList.length === 0 && rec.bantuanDiterima) {
     const rawVal = rec.bantuanDiterima;
     if (rawVal && rawVal !== 'Belum Ada' && rawVal !== 'Belum Terdaftar') {
@@ -389,6 +450,21 @@ function normalizeRecord(rec: any): SLRTRecord {
 
   // Generate fallback Status History
   let statusHistory = rec.statusHistory || [];
+  if (typeof statusHistory === 'string') {
+    try {
+      const trimmed = (statusHistory as string).trim();
+      if (trimmed.startsWith('[')) {
+        statusHistory = JSON.parse(trimmed);
+      } else {
+        statusHistory = [];
+      }
+    } catch (e) {
+      statusHistory = [];
+    }
+  }
+  if (!Array.isArray(statusHistory)) {
+    statusHistory = [];
+  }
   if (statusHistory.length === 0) {
     statusHistory = [
       {
@@ -743,7 +819,7 @@ export default function App() {
       }
       
       // Force refresh of initial data from cloud which also prunes matches
-      await refreshFromCloud(false);
+      await refreshFromCloud(false, true);
       
       alert(`✓ Sinkronisasi Berhasil!\nBerhasil mengirimkan ${success} dari ${keys.length} data perubahan lokal langsung ke Google Sheets secara real-time.`);
     } catch (e) {
@@ -823,8 +899,10 @@ export default function App() {
   };
 
   // Synchronize initial data from Google Sheets database (facilitators + records)
-  const refreshFromCloud = async (showNotification: boolean = false) => {
-    setCloudLoading(true);
+  const refreshFromCloud = async (showNotification: boolean = false, isSilent: boolean = false) => {
+    if (!isSilent) {
+      setCloudLoading(true);
+    }
     try {
       const response = await fetch(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
       if (response.ok) {
@@ -919,14 +997,14 @@ export default function App() {
       setRecords(prev => prev.map(normalizeRecord));
       
       // 4. Trigger cloud synchronization as normal
-      refreshFromCloud(false);
+      refreshFromCloud(false, true);
     }
     
     initializeOfflineCache();
 
     // Auto-update every 12 seconds to ensure registrations and records are in near-real-time sync across devices
     const syncInterval = setInterval(() => {
-      refreshFromCloud(false);
+      refreshFromCloud(false, true);
     }, 12000);
 
     return () => clearInterval(syncInterval);
@@ -1146,7 +1224,7 @@ export default function App() {
   // Synchronize from central database whenever user opens the statistics summary tab to ensure latest numbers on hosting
   useEffect(() => {
     if (activeTab === 'dashboard-summary') {
-      refreshFromCloud(false);
+      refreshFromCloud(false, true);
     }
   }, [activeTab]);
 
@@ -1201,7 +1279,7 @@ export default function App() {
   // AUTHENTICATION & LOGIN PROCESSORS
   // ==========================================
 
-  // 1. Admin Login Submission (Credentials check: Username: SLRT KITO, Password: SLRTKITO9102)
+  // 1. Admin Login Submission (Credentials check: Username: STEMPEL KITO, Password: STEMPELKITO9102)
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
@@ -1210,10 +1288,10 @@ export default function App() {
       return;
     }
 
-    if (authUsername.trim() === 'SLRT KITO' && authPassword.trim() === 'SLRTKITO9102') {
+    if (authUsername.trim() === 'STEMPEL KITO' && authPassword.trim() === 'STEMPELKITO9102') {
       const newSession = {
         role: 'admin' as const,
-        name: 'Administrator SLRT KITO',
+        name: 'Administrator STEMPEL KITO',
         email: 'admin@tanjungbalaikota.go.id'
       };
       setSession(newSession);
@@ -1222,7 +1300,7 @@ export default function App() {
       setAuthUsername('');
       setAuthPassword('');
       setAuthError(null);
-      alert("Autentikasi Berhasil! Selamat datang di Master Web Dashboard SLRT KITO Pemerintah Kota Tanjungbalai.");
+      alert("Autentikasi Berhasil! Selamat datang di Master Web Dashboard STEMPEL KITO Pemerintah Kota Tanjungbalai.");
     } else {
       setAuthError("Kredensial Administrator tidak valid. Pastikan Username dan Password sesuai.");
     }
@@ -1529,7 +1607,7 @@ export default function App() {
   const SMART_PARSER_SAMPLES = [
     {
       label: "Format Laporan WhatsApp 1",
-      text: `LAPORAN PENGADUAN SLRT KITO
+      text: `LAPORAN PENGADUAN STEMPEL KITO
 Nama Fasilitator: M. Riza Syahputra
 Kelurahan: Sijambi
 Kecamatan: Datuk Bandar
@@ -1551,7 +1629,7 @@ Layanan: Pengusulan peralihan KIS Mandiri ke KIS APBD (Penerima Bantuan Iuran) K
     },
     {
       label: "Format Narasi / Chat Acak",
-      text: `Selamat siang Admin SLRT Kito Tanjungbalai, saya fasilitator Halimah ingin melaporkan kunjungan hari ini Kamis tanggal 4 Juni 2026.
+      text: `Selamat siang Admin STEMPEL Kito Tanjungbalai, saya fasilitator Halimah ingin melaporkan kunjungan hari ini Kamis tanggal 4 Juni 2026.
 Tadi saya mengunjungi ibu klien yang bernama Rosmawati di Kelurahan Sirantau, Kecamatan Datuk Bandar. Alamat lengkapnya di Gg. Bersama No. 3A, Sirantau. Beliau ini seorang janda (Pekerjaan KRT: Penjual Kue Keliling), untuk kuasa tidak ada (langsung sendiri). No hp yang bisa dihubungi: 081377884455.
 Dokumen yang dia siapkan ada KK sama KTP. Kondisi ekonominya Sangat Miskin. Belum ada dapat bantuan pkh atau bpnt sama sekali, kasihan sekali. Rumahnya statusnya masih sewa bulanan. Untuk listrik beliau pakai PLN Bersubsidi. Urusan MCK di rumah itu tidak layak karena sumurnya sering keruh dan toiletnya rusak. Pendapatan perbulan hanya sekitar Rp 600.000.
 Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan sekolah ke jenjang SMP karena biaya masuk sekolah dan peralatan yang mahal. Dia ingin mengajukan Layanan bantuan beasiswa siswa kurang mampu atau Kartu Indonesia Pintar (KIP) serta bantuan sosial DTKS.`
@@ -2161,7 +2239,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     setVerifierNotes(rec.catatanPemeriksa || rec.catatan_pendata || '');
     
     // Auto-fill verifier's name automatically with the logged-in user's account name
-    const activeName = session?.name || 'Petugas SLRT';
+    const activeName = session?.name || 'Petugas STEMPEL KITO';
     setVerifierNamaPendata(activeName);
     
     setVerifierFotoKkKtp(rec.fotoKkKtp || rec.foto_ktp_url || '');
@@ -2220,7 +2298,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         const history = rec.statusHistory ? [...rec.statusHistory] : [];
         const activeDate = verifierDate.trim() || 'Hari Ini';
         const activeNotes = verifierNotes.trim() || 'Kunjungan fisik lapangan dan pemeriksaan 18 indikator selesai diverifikasi tanpa catatan khusus.';
-        const activeBy = verifierNamaPendata.trim() || session?.name || rec.namaFasilitator || 'Petugas SLRT';
+        const activeBy = verifierNamaPendata.trim() || session?.name || rec.namaFasilitator || 'Petugas STEMPEL KITO';
         
         // Remove prior verified log if somehow present to prevent doubles, then push fresh
         const filteredHistory = history.filter(h => h.status !== 'Diverifikasi');
@@ -2308,7 +2386,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     const isDuplicate = records.some(r => r.nik === cleanNik);
     if (isDuplicate) {
       const dupRec = records.find(r => r.nik === cleanNik);
-      alert(`⚠️ Duplikasi NIK Terdeteksi!\n\nNIK (${cleanNik}) sudah pernah terdaftar atas nama "${dupRec?.namaKlien}" (Kelurahan ${dupRec?.kelurahan}, Status Kunjungan: ${dupRec?.statusKunjungan || 'Belum Dikunjungi'}).\n\nLaporan rujukan mandiri baru tidak dapat diajukan apabila NIK telah terdaftar sebelumnya dalam database pelayanan SLRT.`);
+      alert(`⚠️ Duplikasi NIK Terdeteksi!\n\nNIK (${cleanNik}) sudah pernah terdaftar atas nama "${dupRec?.namaKlien}" (Kelurahan ${dupRec?.kelurahan}, Status Kunjungan: ${dupRec?.statusKunjungan || 'Belum Dikunjungi'}).\n\nLaporan rujukan mandiri baru tidak dapat diajukan apabila NIK telah terdaftar sebelumnya dalam database pelayanan STEMPEL KITO.`);
       return;
     }
 
@@ -2503,24 +2581,24 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
   const filteredRecords = useMemo(() => {
     return records.filter(rec => {
       const matchesSearch = 
-        rec.namaKlien.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        rec.namaFasilitator.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        rec.alamatKlien.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        rec.jenisPengaduan.toLowerCase().includes(searchQuery.toLowerCase());
+        (rec.namaKlien || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (rec.namaFasilitator || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (rec.alamatKlien || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (rec.jenisPengaduan || '').toLowerCase().includes(searchQuery.toLowerCase());
       
-      const matchesKecamatan = filterKecamatan ? rec.kecamatan === filterKecamatan : true;
-      const matchesKelurahan = filterKelurahan ? rec.kelurahan.toLowerCase() === filterKelurahan.toLowerCase() : true;
-      const matchesStatus = filterStatus ? rec.status === filterStatus : true;
+      const matchesKecamatan = filterKecamatan ? (rec.kecamatan || '') === filterKecamatan : true;
+      const matchesKelurahan = filterKelurahan ? (rec.kelurahan || '').toLowerCase() === filterKelurahan.toLowerCase() : true;
+      const matchesStatus = filterStatus ? (rec.status || '') === filterStatus : true;
       const matchesKunjungan = filterKunjungan ? (rec.statusKunjungan || 'Belum Dikunjungi') === filterKunjungan : true;
 
       let matchesFasilitatorFilter = true;
       if (selectedFacilitatorFilter && selectedFacilitatorFilter !== 'all') {
-        matchesFasilitatorFilter = rec.namaFasilitator === selectedFacilitatorFilter;
+        matchesFasilitatorFilter = (rec.namaFasilitator || '') === selectedFacilitatorFilter;
       }
 
       let matchesPendataFilter = true;
       if (selectedPendataFilter && selectedPendataFilter !== 'all') {
-        matchesPendataFilter = rec.namaPendata === selectedPendataFilter;
+        matchesPendataFilter = (rec.namaPendata || '') === selectedPendataFilter;
       }
 
       // Range Month & Year filter
@@ -2577,16 +2655,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         }
       }
 
-      let matchesBulanBerjalan = true;
-      if (filterBulanBerjalan) {
-        if (parsedDate) {
-          matchesBulanBerjalan = parsedDate.month === 6 && parsedDate.year === 2026;
-        } else {
-          matchesBulanBerjalan = false;
-        }
-      }
-
-      return matchesSearch && matchesKecamatan && matchesKelurahan && matchesStatus && matchesKunjungan && matchesFasilitatorFilter && matchesPendataFilter && matchesDateRange && matchesVerifDateRange && matchesBulanBerjalan;
+      return matchesSearch && matchesKecamatan && matchesKelurahan && matchesStatus && matchesKunjungan && matchesFasilitatorFilter && matchesPendataFilter && matchesDateRange && matchesVerifDateRange;
     });
   }, [
     records, 
@@ -2602,8 +2671,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     filterEndMonth,
     filterEndYear,
     filterVerifStartDate,
-    filterVerifEndDate,
-    filterBulanBerjalan
+    filterVerifEndDate
   ]);
 
   // Selected Object
@@ -2611,24 +2679,20 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     return records.find(rec => rec.id === selectedRecordId) || null;
   }, [records, selectedRecordId]);
 
-  // Stats per Kelurahan for current month (Juni 2026)
-  const currentMonthKelurahanStats = useMemo(() => {
+  // Stats per Kelurahan for all records
+  const kelurahanStats = useMemo(() => {
     const stats: Record<string, { total: number; visited: number; unvisited: number }> = {};
     records.forEach(r => {
       if (r.isDeleted === true || r.isDeleted === 'true') return;
-      const parsedDate = parseMonthAndYear(r.hariTanggal);
-      const isCurrentMonth = parsedDate && parsedDate.month === 6 && parsedDate.year === 2026;
-      if (isCurrentMonth) {
-        const kel = r.kelurahan || 'Tidak Diketahui';
-        if (!stats[kel]) {
-          stats[kel] = { total: 0, visited: 0, unvisited: 0 };
-        }
-        stats[kel].total += 1;
-        if (r.statusKunjungan === 'Sudah Dikunjungi') {
-          stats[kel].visited += 1;
-        } else {
-          stats[kel].unvisited += 1;
-        }
+      const kel = r.kelurahan || 'Tidak Diketahui';
+      if (!stats[kel]) {
+        stats[kel] = { total: 0, visited: 0, unvisited: 0 };
+      }
+      stats[kel].total += 1;
+      if (r.statusKunjungan === 'Sudah Dikunjungi') {
+        stats[kel].visited += 1;
+      } else {
+        stats[kel].unvisited += 1;
       }
     });
     return stats;
@@ -2658,13 +2722,32 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
   // Markdown generator
   const generateMarkdownTable = (recList: SLRTRecord[]) => {
-    let md = `| No | Nama Klien | J.Kel / Alamat | Pekerjaan KRT | Bantuan Terakhir | Status Sosial | Penghasilan | Keluhan / Pengaduan | Layanan yang Diinginkan |\n|---|---|---|---|---|---|---|---|---|\n`;
+    const headers = `| No | Nama Klien | J.Kel | Alamat | Pekerjaan KRT | Bantuan Terstruktur | Status Sosial | Penghasilan | Kelurahan | Pengaduan | Layanan yang Diinginkan |`;
+    const separator = `|---|---|---|---|---|---|---|---|---|---|---|`;
+    
+    if (cloudLoading) {
+      return `${headers}\n${separator}\n| - | **Loading data antrian...** | - | - | - | - | - | - | - | - | - |\n`;
+    }
+    
+    if (!recList || recList.length === 0) {
+      return `${headers}\n${separator}\n| - | **Tidak ada data antrian yang cocok dengan filter saat ini** | - | - | - | - | - | - | - | - | - |\n`;
+    }
+
+    let md = `${headers}\n${separator}\n`;
     
     recList.forEach((rec, idx) => {
-      const cleanAlamat = rec.alamatKlien.replace(/\|/g, '\\|').replace(/\n/g, ' ');
-      const cleanKeluhan = rec.jenisPengaduan.substring(0, 150).replace(/\|/g, '\\|').replace(/\n/g, ' ') + (rec.jenisPengaduan.length > 150 ? '...' : '');
-      const cleanLayanan = rec.jenisLayanan.replace(/\|/g, '\\|').replace(/\n/g, ' ');
-      md += `| ${idx + 1} | **${rec.namaKlien}** <br> \`Kel. ${rec.kelurahan}\` | ${cleanAlamat} <br> Telp: ${rec.noTelpon} | ${rec.pekerjaanKrt} | ${rec.bantuanDiterima} | **${rec.status}** | ${rec.pendapatanPerbulan} | ${cleanKeluhan} | ${cleanLayanan} |\n`;
+      const cleanNama = (rec.namaKlien || '').replace(/\|/g, '\\|').trim();
+      const jkel = (rec as any).jKel || (rec as any).jenisKelamin || '-';
+      const cleanAlamat = (rec.alamatKlien || '').replace(/\|/g, '\\|').replace(/\n/g, ' ').trim();
+      const cleanPekerjaan = (rec.pekerjaanKrt || '').replace(/\|/g, '\\|').trim();
+      const cleanBantuan = (rec.bantuanDiterima || '').replace(/\|/g, '\\|').trim();
+      const cleanStatus = (rec.status || '').replace(/\|/g, '\\|').trim();
+      const cleanPenghasilan = (rec.pendapatanPerbulan || '').replace(/\|/g, '\\|').trim();
+      const cleanKelurahan = (rec.kelurahan || '').replace(/\|/g, '\\|').trim();
+      const cleanKeluhan = (rec.jenisPengaduan || '').substring(0, 150).replace(/\|/g, '\\|').replace(/\n/g, ' ').trim() + ((rec.jenisPengaduan || '').length > 150 ? '...' : '');
+      const cleanLayanan = (rec.jenisLayanan || '').replace(/\|/g, '\\|').replace(/\n/g, ' ').trim();
+      
+      md += `| ${idx + 1} | **${cleanNama || '-'}** | ${jkel} | ${cleanAlamat || '-'} | ${cleanPekerjaan || '-'} | ${cleanBantuan || '-'} | **${cleanStatus || '-'}** | ${cleanPenghasilan || '-'} | Kel. ${cleanKelurahan || '-'} | ${cleanKeluhan || '-'} | ${cleanLayanan || '-'} |\n`;
     });
     return md;
   };
@@ -2683,7 +2766,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(records, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `Data_SLRT_KITO_Tanjungbalai_${new Date().toISOString().slice(0,10)}.json`);
+    downloadAnchor.setAttribute("download", `Data_STEMPEL_KITO_Tanjungbalai_${new Date().toISOString().slice(0,10)}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -2718,7 +2801,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       
       // Target requested verification metrics with side-by-side columns
       'Fasilitator Lapangan': rec.namaFasilitator || 'Belum Ditunjuk',
-      'Nama Pendata': rec.namaPendata || (rec.statusKunjungan === 'Sudah Dikunjungi' ? (rec.namaFasilitator || 'Petugas SLRT') : 'Belum Diverifikasi'),
+      'Nama Pendata': rec.namaPendata || (rec.statusKunjungan === 'Sudah Dikunjungi' ? (rec.namaFasilitator || 'Petugas STEMPEL KITO') : 'Belum Diverifikasi'),
       'Tanggal Verifikasi Lapangan (Audit)': rec.tanggalPemeriksaan || 'Belum Diverifikasi',
       'Tanggal Verifikasi': (rec.statusKunjungan === 'Sudah Dikunjungi') ? (rec.tanggalPemeriksaan || '') : '',
       'Catatan Petugas Lapangan (Verifikasi)': rec.catatanPemeriksa || 'Belum ada catatan lapangan',
@@ -2726,7 +2809,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     }));
 
     // Construct metadata filename
-    let fileNamePrefix = 'Laporan_Terpadu_SLRT_KITO_Tanjungbalai';
+    let fileNamePrefix = 'Laporan_Terpadu_STEMPEL_KITO_Tanjungbalai';
     if (selectedFacilitatorFilter && selectedFacilitatorFilter !== 'all') {
       fileNamePrefix += `_Fas_${selectedFacilitatorFilter.replace(/\s+/g, '_')}`;
     }
@@ -2783,6 +2866,14 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       setSyncingTargetName(rec.namaKlien);
     }
     try {
+      const flatRec = {
+        ...rec,
+        indikatorSosialEkonomi: Array.isArray(rec.indikatorSosialEkonomi) ? rec.indikatorSosialEkonomi.join('; ') : (rec.indikatorSosialEkonomi || ''),
+        kelayakanHuni: Array.isArray(rec.kelayakanHuni) ? rec.kelayakanHuni.join('; ') : (rec.kelayakanHuni || ''),
+        bantuanDiterimaList: Array.isArray(rec.bantuanDiterimaList) ? rec.bantuanDiterimaList.join('; ') : (rec.bantuanDiterimaList || ''),
+        statusHistory: Array.isArray(rec.statusHistory) ? JSON.stringify(rec.statusHistory) : (rec.statusHistory || '')
+      };
+
       await fetch(GOOGLE_SHEETS_API_URL, {
         method: "POST",
         mode: "no-cors",
@@ -2791,12 +2882,15 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         },
         body: JSON.stringify({
           action: 'syncRecord',
-          data: rec
+          data: flatRec
         })
       });
       
-      // Clear the local override so it doesn't mask cloud updates or conflicts on other machines
-      deleteRecordOverride(rec.id);
+      // Note: Do NOT delete the local override immediately here, because the next immediate
+      // refreshFromCloud might not have the brand new sheet record updated yet (causing a race condition
+      // where the record disappears). Instead, let refreshFromCloud safely prune the override
+      // automatically only when it detects that the record actively exists in the fetched cloud payload.
+      // deleteRecordOverride(rec.id);
 
       if (silent) {
         setBackgroundSyncStatus('success');
@@ -2806,7 +2900,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       }
 
       // Automatically refresh in the background to update client memory
-      await refreshFromCloud(false);
+      await refreshFromCloud(false, true);
     } catch (err) {
       console.error(err);
       if (silent) {
@@ -2835,6 +2929,14 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     
     for (const rec of records) {
       try {
+        const flatRec = {
+          ...rec,
+          indikatorSosialEkonomi: Array.isArray(rec.indikatorSosialEkonomi) ? rec.indikatorSosialEkonomi.join('; ') : (rec.indikatorSosialEkonomi || ''),
+          kelayakanHuni: Array.isArray(rec.kelayakanHuni) ? rec.kelayakanHuni.join('; ') : (rec.kelayakanHuni || ''),
+          bantuanDiterimaList: Array.isArray(rec.bantuanDiterimaList) ? rec.bantuanDiterimaList.join('; ') : (rec.bantuanDiterimaList || ''),
+          statusHistory: Array.isArray(rec.statusHistory) ? JSON.stringify(rec.statusHistory) : (rec.statusHistory || '')
+        };
+
         await fetch(GOOGLE_SHEETS_API_URL, {
           method: "POST",
           mode: "no-cors",
@@ -2843,7 +2945,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           },
           body: JSON.stringify({
             action: 'syncRecord',
-            data: rec
+            data: flatRec
           })
         });
         successCount++;
@@ -3128,6 +3230,31 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       setFacilitators([]);
       setSelectedRecordId(null);
       alert("Seluruh database berhasil dikosongkan sepenuhnya!");
+    }
+  };
+
+  // Handle reset filters and navigate to Database tab to show all sources (Warga, Admin, Fasilitator)
+  const handleViewDatabaseKunjungan = () => {
+    setSearchQuery('');
+    setFilterKecamatan('');
+    setFilterKelurahan('');
+    setFilterStatus('');
+    setFilterKunjungan('');
+    setFilterStartMonth('');
+    setFilterStartYear('');
+    setFilterEndMonth('');
+    setFilterEndYear('');
+    setFilterVerifStartDate('');
+    setFilterVerifEndDate('');
+    setFilterBulanBerjalan(false);
+    setSelectedFacilitatorFilter('all');
+    setSelectedPendataFilter('all');
+    
+    setActiveTab('all-records');
+    
+    // Auto select the first record to display the details on the right
+    if (records && records.length > 0) {
+      setSelectedRecordId(records[0].id);
     }
   };
 
@@ -5209,7 +5336,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
             <h4 className="text-[10px] font-black text-slate-450 uppercase tracking-widest px-2 pb-2 border-b border-slate-150 mb-2">MENU DASBOR</h4>
             
             <button
-              onClick={() => setActiveTab('all-records')}
+              onClick={handleViewDatabaseKunjungan}
               className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                 activeTab === 'all-records' 
                   ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
@@ -5544,59 +5671,48 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 </div>
               </div>
 
-              {/* INTERACTIVE HUD: BULAN BERJALAN & PER KELURAHAN COVERS */}
+              {/* INTERACTIVE HUD: PER KELURAHAN COVERS */}
               <div className="bg-slate-50 border-y border-slate-200 p-3.5 flex flex-col gap-2 shrink-0">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5 font-display">
                     <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
-                    Saringan Bulan Berjalan (Juni 2026)
+                    Saringan Instan per Kelurahan
                   </span>
                   
-                  {/* Toggle button for Bulan Berjalan Filter */}
-                  <button
-                    onClick={() => {
-                      setFilterBulanBerjalan(!filterBulanBerjalan);
-                      // If deactivated, reset kelurahan filter as well if chosen
-                      if (filterBulanBerjalan) {
-                        setFilterKelurahan('');
-                      }
-                    }}
-                    className={`px-2 py-0.5 rounded-md text-[8.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                      filterBulanBerjalan 
-                        ? 'bg-indigo-600 text-white shadow-xs' 
-                        : 'bg-white hover:bg-slate-100 text-slate-500 border border-slate-200'
-                    }`}
-                  >
-                    {filterBulanBerjalan ? 'Aktif' : 'Aktifkan'}
-                  </button>
+                  {filterKelurahan && (
+                    <button
+                      type="button"
+                      onClick={() => setFilterKelurahan('')}
+                      className="px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-500 text-[8.5px] font-black hover:bg-slate-100 uppercase transition-all tracking-wider cursor-pointer font-sans"
+                    >
+                      Batal Saring
+                    </button>
+                  )}
                 </div>
 
-                <p className="text-[9px] text-slate-450 leading-normal italic">
-                  Informasi sebaran laporan masuk bulan berjalan per Kelurahan. Klik untuk menyaring secara instan:
+                <p className="text-[9px] text-slate-450 leading-normal italic font-sans font-medium">
+                  Klik nama Kelurahan di bawah untuk menyaring berkas rujukan secara cepat:
                 </p>
 
                 {/* Grid of Kelurahan Chips */}
-                {Object.keys(currentMonthKelurahanStats).length === 0 ? (
-                  <div className="text-center p-2 text-slate-400 text-[9px] italic bg-white rounded-lg border border-slate-150">
-                    Tidak ada berkas terdaftar untuk bulan berjalan.
+                {Object.keys(kelurahanStats).length === 0 ? (
+                  <div className="text-center p-2 text-slate-400 text-[9px] italic bg-white rounded-lg border border-slate-150 font-sans font-medium">
+                    Belum ada data rujukan masuk dalam database.
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-1.5 max-h-[145px] overflow-y-auto pr-0.5">
-                    {(Object.entries(currentMonthKelurahanStats) as [string, { total: number; visited: number; unvisited: number }][])
+                    {(Object.entries(kelurahanStats) as [string, { total: number; visited: number; unvisited: number }][])
                       .map(([kelName, stats]) => {
-                        const isKelActive = filterBulanBerjalan && filterKelurahan.toLowerCase() === kelName.toLowerCase();
+                        const isKelActive = filterKelurahan.toLowerCase() === kelName.toLowerCase();
                         return (
                           <button
                             key={kelName}
                             type="button"
                             onClick={() => {
-                              // Auto activate the Bulan Berjalan filter
-                              setFilterBulanBerjalan(true);
-                              
                               if (isKelActive) {
-                                setFilterKelurahan('');
+                                  setFilterKelurahan('');
                               } else {
-                                setFilterKelurahan(kelName);
+                                  setFilterKelurahan(kelName);
                               }
                             }}
                             className={`p-1.5 rounded-lg border text-left flex flex-col justify-between transition-all cursor-pointer ${
@@ -5605,12 +5721,12 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                                 : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
                             }`}
                           >
-                            <span className="text-[9.5px] font-bold truncate block w-full text-slate-800">
+                            <span className="text-[9.5px] font-black truncate block w-full text-slate-800 font-display">
                               Kel. {kelName}
                             </span>
                             <div className="flex items-center justify-between mt-1 w-full text-[8.5px] font-mono leading-none">
-                              <span className="text-slate-400">Berkas:</span>
-                              <span className="font-bold text-slate-800">{stats.total}</span>
+                              <span className="text-slate-450">Berkas:</span>
+                              <span className="font-black text-slate-800">{stats.total}</span>
                             </div>
                             <div className="flex items-center justify-between mt-0.5 w-full text-[8px] font-bold text-teal-600 leading-none">
                               <span>Selesai:</span>
@@ -5619,25 +5735,6 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                           </button>
                         );
                       })}
-                  </div>
-                )}
-
-                {/* Actionable status indicator */}
-                {filterBulanBerjalan && (
-                  <div className="flex justify-between items-center bg-indigo-50/50 p-1.5 rounded-lg border border-indigo-100 mt-0.5">
-                    <span className="text-[8.5px] text-indigo-900 font-bold">
-                      Menyaring {filterKelurahan ? `Kel. ${filterKelurahan}` : 'Semua Kelurahan'} (Juni 2026)
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFilterBulanBerjalan(false);
-                        setFilterKelurahan('');
-                      }}
-                      className="text-[8px] font-black text-rose-600 hover:text-rose-800 uppercase cursor-pointer"
-                    >
-                      Batal Saring
-                    </button>
                   </div>
                 )}
               </div>
@@ -5661,8 +5758,9 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     ) : (
                     filteredRecords.map((rec) => {
                       const isSelected = selectedRecordId === rec.id;
-                      const isSangatMiskin = rec.status.toLowerCase().includes('sangat');
-                      const isRentan = rec.status.toLowerCase().includes('rentan');
+                      const statusVal = rec.status || 'Miskin';
+                      const isSangatMiskin = statusVal.toLowerCase().includes('sangat');
+                      const isRentan = statusVal.toLowerCase().includes('rentan');
                       return (
                         <div
                           key={rec.id}
@@ -5676,10 +5774,10 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                           <div className="flex justify-between items-start gap-1">
                             <div>
                               <p className="text-[9px] font-black uppercase text-indigo-600/80 tracking-wide font-mono">
-                                {rec.kecamatan}
+                                {rec.kecamatan || '-'}
                               </p>
                               <p className="text-xs font-bold text-slate-800 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                {rec.namaKlien}
+                                {rec.namaKlien || '-'}
                                 {rec.isHighPriority && (
                                   <span className="text-[7.5px] font-black px-1 py-0.5 rounded-md bg-rose-600 text-white uppercase tracking-wider animate-pulse inline-block">
                                     🚨 PRIORITAS
@@ -5687,7 +5785,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                                 )}
                               </p>
                               <p className="text-[10px] text-slate-500 mt-0.5 font-sans font-medium">
-                                Saran: <span className="text-indigo-900 font-extrabold">{rec.status}</span>
+                                Saran: <span className="text-indigo-900 font-extrabold">{statusVal}</span>
                               </p>
                             </div>
                             
@@ -6020,7 +6118,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 </div>
                 
                 <button
-                  onClick={() => { resetForm(); setActiveTab('all-records'); }}
+                  onClick={() => { resetForm(); handleViewDatabaseKunjungan(); }}
                   className="text-xs text-slate-550 hover:text-slate-800 bg-white border border-slate-250 py-1.5 px-3 rounded-lg hover:bg-slate-50 transition-all cursor-pointer"
                 >
                   Kembali ke Database

@@ -29,8 +29,8 @@ export default function BentoRecordDetails({
 }: BentoRecordDetailsProps) {
   
   // Custom helper for status coloring
-  const getStatusStyle = (status: string) => {
-    const s = status.toLowerCase();
+  const getStatusStyle = (status: string | undefined) => {
+    const s = (status || 'Miskin').toLowerCase();
     if (s.includes('sangat')) {
       return {
         bg: 'bg-rose-50 border-rose-100 text-rose-700',
@@ -71,7 +71,7 @@ export default function BentoRecordDetails({
   const photoStatusText = countPhotos > 0 ? `Tersedia (${countPhotos} Foto)` : 'Belum Ada Foto';
 
   // Split documents string into badges
-  const docList = rec.dokumen
+  const docList = (rec.dokumen || 'KK, KTP')
     .split(',')
     .map(doc => doc.trim())
     .filter(doc => doc.length > 0);
