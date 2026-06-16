@@ -48,34 +48,69 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
   const [selectedMonth, setSelectedMonth] = useState(monthsIndo[now.getMonth()]);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
+  // Helper to robustly check if a date string falls within a specified Indonesian month & year period
+  const isDateInPeriod = (dateStr: string, targetMonthIndex: number, targetYear: number, monthsArray: string[]): boolean => {
+    if (!dateStr) return false;
+    const lowerStr = dateStr.toLowerCase().trim();
+    if (lowerStr === 'hari ini') {
+      const today = new Date();
+      return today.getMonth() === targetMonthIndex && today.getFullYear() === targetYear;
+    }
+
+    const targetMonthName = monthsArray[targetMonthIndex].toLowerCase();
+    const targetShortName = targetMonthName.substring(0, 3);
+    const targetYearStr = targetYear.toString();
+
+    // 1. Check for literal month name and year (e.g., "16 Juni 2026")
+    if (lowerStr.includes(targetYearStr)) {
+      if (lowerStr.includes(targetMonthName) || lowerStr.includes(targetShortName)) {
+        return true;
+      }
+    }
+
+    // 2. Check for numeric format DD-MM-YYYY or DD/MM/YYYY (e.g., "16/06/2026")
+    const dmyMatch = lowerStr.match(/\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/);
+    if (dmyMatch) {
+      const mNum = parseInt(dmyMatch[2], 10);
+      const yNum = parseInt(dmyMatch[3], 10);
+      if (mNum === (targetMonthIndex + 1) && yNum === targetYear) {
+        return true;
+      }
+    }
+
+    // 3. Check for numeric format YYYY-MM-DD or YYYY/MM/DD (e.g., "2026-06-16")
+    const ymdMatch = lowerStr.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/);
+    if (ymdMatch) {
+      const yNum = parseInt(ymdMatch[1], 10);
+      const mNum = parseInt(ymdMatch[2], 10);
+      if (mNum === (targetMonthIndex + 1) && yNum === targetYear) {
+        return true;
+      }
+    }
+
+    // 4. Native JS date parsing fallback
+    const parsed = new Date(dateStr);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.getMonth() === targetMonthIndex && parsed.getFullYear() === targetYear;
+    }
+
+    return false;
+  };
+
   // Filter records for the selected Month & Year
   const filteredMonthlyRecords = useMemo(() => {
+    const targetMonthIndex = monthsIndo.findIndex(m => m.toLowerCase() === selectedMonth.toLowerCase());
+    if (targetMonthIndex === -1) return [];
+
     return records.filter(r => {
-      const dateStr = r.hariTanggal || '';
-      const lowerStr = dateStr.toLowerCase();
-      const targetMonthLower = selectedMonth.toLowerCase();
-      const targetYearStr = selectedYear.toString();
-      
-      // Look for Month name and Year in the input date string (e.g. "Senin, 01 Juni 2026")
-      if (lowerStr.includes(targetMonthLower) && lowerStr.includes(targetYearStr)) {
+      // Check primary registration date
+      if (isDateInPeriod(r.hariTanggal, targetMonthIndex, selectedYear, monthsIndo)) {
         return true;
       }
-      
-      // Fallback: Date parsing
-      const parsedDate = new Date(dateStr);
-      if (!isNaN(parsedDate.getTime())) {
-        if (monthsIndo[parsedDate.getMonth()].toLowerCase() === targetMonthLower && parsedDate.getFullYear() === selectedYear) {
-          return true;
-        }
-      }
-      
-      // Fallback 2: Check check-in timestamp (tanggalPemeriksaan)
-      const examStr = r.tanggalPemeriksaan || '';
-      const examLower = examStr.toLowerCase();
-      if (examLower.includes(targetMonthLower) && examLower.includes(targetYearStr)) {
+      // Check secondary check-in verification date
+      if (isDateInPeriod(r.tanggalPemeriksaan, targetMonthIndex, selectedYear, monthsIndo)) {
         return true;
       }
-      
       return false;
     });
   }, [records, selectedMonth, selectedYear, monthsIndo]);
@@ -395,33 +430,44 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     currentY += 15;
 
     // SECTION 3: COMPLETED DETAILED LIST
-    const completedList = filteredMonthlyRecords.filter(r => r.statusKunjungan === 'Sudah Dikunjungi');
+    const completedList = filteredMonthlyRecords.filter(r => {
+      const statusK = (r.statusKunjungan || '').trim().toLowerCase();
+      return statusK === 'sudah dikunjungi' || statusK === 'selesai' || statusK === 'verified' || statusK === 'sudah';
+    });
     
-    if (completedList.length > 0) {
-      checkSpaceAndBreaks(25);
-      doc.setFillColor(241, 245, 249);
-      doc.rect(leftMargin, currentY, usableWidth, 6, 'F');
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(15, 118, 110);
-      doc.text("III. RINCIAN DAFTAR KASUS SELESAI VERIFIKASI FISIK", leftMargin + 3, currentY + 4.5);
-      
-      currentY += 10;
+    checkSpaceAndBreaks(25);
+    doc.setFillColor(241, 245, 249);
+    doc.rect(leftMargin, currentY, usableWidth, 6, 'F');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(15, 118, 110);
+    doc.text("III. RINCIAN DAFTAR KASUS SELESAI VERIFIKASI FISIK", leftMargin + 3, currentY + 4.5);
+    
+    currentY += 10;
 
-      doc.setFillColor(71, 85, 105);
-      doc.rect(leftMargin, currentY, usableWidth, 7, 'F');
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(7);
-      doc.setTextColor(255, 255, 255);
-      doc.text("No", leftMargin + 3, currentY + 4.5);
-      doc.text("Nama Klien", leftMargin + 12, currentY + 4.5);
-      doc.text("Kelurahan / Kecamatan", leftMargin + 48, currentY + 4.5);
-      doc.text("Tanggal Audit", leftMargin + 100, currentY + 4.5);
-      doc.text("Status SOS", leftMargin + 132, currentY + 4.5);
-      doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 150, currentY + 4.5);
+    doc.setFillColor(71, 85, 105);
+    doc.rect(leftMargin, currentY, usableWidth, 7, 'F');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(255, 255, 255);
+    doc.text("No", leftMargin + 3, currentY + 4.5);
+    doc.text("Nama Klien", leftMargin + 12, currentY + 4.5);
+    doc.text("Kelurahan / Kecamatan", leftMargin + 48, currentY + 4.5);
+    doc.text("Tanggal Audit", leftMargin + 100, currentY + 4.5);
+    doc.text("Status SOS", leftMargin + 132, currentY + 4.5);
+    doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 150, currentY + 4.5);
 
-      currentY += 7;
+    currentY += 7;
 
+    if (completedList.length === 0) {
+      checkSpaceAndBreaks(10);
+      doc.setFillColor(255, 255, 255);
+      doc.setFont('Helvetica', 'oblique');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text("NIHIL (Belum ada laporan kunjungan fisik lapangan yang selesai diverifikasi pada periode bulan berjalan)", leftMargin + 4, currentY + 4.5);
+      currentY += 8;
+    } else {
       let rId = 1;
       completedList.forEach(item => {
         checkSpaceAndBreaks(8);
@@ -437,6 +483,7 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
 
         doc.setFont('Helvetica', 'bold');
         doc.setFontSize(7.5);
+        doc.setTextColor(51, 65, 85); // Explicitly reset text color to dark gray so that data is readable (was white)
         doc.text(rId.toString(), leftMargin + 3, currentY + 4.2);
         doc.text(item.namaKlien || '-', leftMargin + 12, currentY + 4.2);
         doc.setFont('Helvetica', 'normal');
@@ -451,6 +498,80 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
         doc.text(item.namaFasilitator || '-', leftMargin + 150, currentY + 4.2);
 
         rId++;
+        currentY += 6;
+      });
+      currentY += 5;
+    }
+
+    // SECTION 4: INCOMING / REGISTERED VISIT QUEUE DETAILED LIST
+    const pendingList = filteredMonthlyRecords.filter(r => {
+      const statusK = (r.statusKunjungan || '').trim().toLowerCase();
+      return statusK !== 'sudah dikunjungi' && statusK !== 'selesai' && statusK !== 'verified' && statusK !== 'sudah';
+    });
+
+    checkSpaceAndBreaks(25);
+    doc.setFillColor(241, 245, 249);
+    doc.rect(leftMargin, currentY, usableWidth, 6, 'F');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(15, 118, 110);
+    doc.text("IV. RINCIAN DAFTAR ANTREAN KUNJUNGAN MASUK (BELUM VERIFIKASI)", leftMargin + 3, currentY + 4.5);
+    
+    currentY += 10;
+
+    doc.setFillColor(71, 85, 105);
+    doc.rect(leftMargin, currentY, usableWidth, 7, 'F');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(255, 255, 255);
+    doc.text("No", leftMargin + 3, currentY + 4.5);
+    doc.text("Nama Klien", leftMargin + 12, currentY + 4.5);
+    doc.text("Kelurahan / Kecamatan", leftMargin + 48, currentY + 4.5);
+    doc.text("Tanggal Registrasi", leftMargin + 100, currentY + 4.5);
+    doc.text("Status SOS", leftMargin + 132, currentY + 4.5);
+    doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 150, currentY + 4.5);
+
+    currentY += 7;
+
+    if (pendingList.length === 0) {
+      checkSpaceAndBreaks(10);
+      doc.setFillColor(255, 255, 255);
+      doc.setFont('Helvetica', 'oblique');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text("NIHIL (Seluruh aduan rujukan berjalan telah tuntas dikunjungi dan diverifikasi fisik)", leftMargin + 4, currentY + 4.5);
+      currentY += 8;
+    } else {
+      let pId = 1;
+      pendingList.forEach(item => {
+        checkSpaceAndBreaks(8);
+
+        if (pId % 2 === 0) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(leftMargin, currentY, usableWidth, 6, 'F');
+        }
+
+        doc.setDrawColor(241, 245, 249);
+        doc.setLineWidth(0.1);
+        doc.line(leftMargin, currentY + 6, docWidth - rightMargin, currentY + 6);
+
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(51, 65, 85); // Explicitly reset text color to dark gray
+        doc.text(pId.toString(), leftMargin + 3, currentY + 4.2);
+        doc.text(item.namaKlien || '-', leftMargin + 12, currentY + 4.2);
+        doc.setFont('Helvetica', 'normal');
+        doc.text(`${item.kelurahan || '-'}, ${item.kecamatan || '-'}`, leftMargin + 48, currentY + 4.2);
+        
+        let tgl = item.hariTanggal || '-';
+        if (tgl.includes(',')) {
+          tgl = tgl.split(',')[1].trim();
+        }
+        doc.text(tgl, leftMargin + 100, currentY + 4.2);
+        doc.text(item.status || 'Miskin', leftMargin + 132, currentY + 4.2);
+        doc.text(item.namaFasilitator || item.namaPendata || '-', leftMargin + 150, currentY + 4.2);
+
+        pId++;
         currentY += 6;
       });
       currentY += 5;
