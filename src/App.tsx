@@ -3663,7 +3663,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
             <div class="header-text">
               <h1>PEMERINTAH KOTA TANJUNGBALAI</h1>
               <h2>DINAS SOSIAL KOTA TANJUNGBALAI</h2>
-              <h3>SISTEM LAYANAN DAN RUJUKAN TERPADU - SLRT KITO</h3>
+              <h3>SENTRA PELAYANAN TERPADU MASYARAKAT KOTA TANJUNGBALAI - STEMPEL KITO</h3>
               <p>Kawasan Kantor Walikota, Kota Tanjungbalai, Sumatera Utara</p>
             </div>
           </div>
@@ -3851,8 +3851,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           </div>
           
           <div class="footer-disclaimer">
-            <span>Pernyataan: Dokumen ini divalidasi sah secara elektronik oleh Sistem Layanan dan Rujukan Terpadu SLRT KITO Kota Tanjungbalai.</span>
-            <span>SLRT KITO</span>
+            <span>Pernyataan: Dokumen ini divalidasi sah secara elektronik oleh Sentra Pelayanan Terpadu Masyarakat STEMPEL KITO Kota Tanjungbalai.</span>
+            <span>STEMPEL KITO</span>
           </div>
         </body>
       </html>
@@ -3974,9 +3974,9 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     doc.text('DINAS SOSIAL KOTA TANJUNGBALAI', 112, 23, { align: 'center' });
 
     doc.setFont('Helvetica', 'normal');
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setTextColor(100, 116, 139);
-    doc.text('SISTEM LAYANAN DAN RUJUKAN TERPADU - SLRT KITO', 112, 29, { align: 'center' });
+    doc.text('SENTRA PELAYANAN TERPADU MASYARAKAT KOTA TANJUNGBALAI - STEMPEL KITO', 112, 29, { align: 'center' });
 
     // Double divider lines
     doc.setDrawColor(148, 163, 184);
@@ -4298,7 +4298,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       doc.setFont('Helvetica', 'italic');
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);
-      doc.text('Pernyataan: Dokumen ini divalidasi sah secara elektronik oleh Sistem Layanan dan Rujukan Terpadu SLRT KITO Kota Tanjungbalai.', 15, 284);
+      doc.text('Pernyataan: Dokumen ini divalidasi sah secara elektronik oleh Sentra Pelayanan Terpadu Masyarakat STEMPEL KITO Kota Tanjungbalai.', 15, 284);
       doc.text(`Halaman ${pageNum} dari ${totalPages}`, 195, 284, { align: 'right' });
     };
 
@@ -4316,8 +4316,13 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       {/* 1. HEADER RE-DESIGNED TO BENTO SPEC */}
       <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 md:px-8 shrink-0 shadow-xs z-10 font-sans">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-extrabold text-sm shadow-sm shadow-indigo-150 select-none">
-            S
+          <div className="w-10 h-10 bg-white border border-slate-100 rounded-xl flex items-center justify-center overflow-hidden p-0.5 shadow-xs select-none">
+            <img 
+              src="https://upload.wikimedia.org/wikipedia/commons/9/90/LOGO_KOTA_TANJUNG_BALAI.png" 
+              alt="Logo Tanjungbalai" 
+              className="w-full h-full object-contain"
+              referrerPolicy="no-referrer"
+            />
           </div>
           <div>
             <h1 className="text-base font-extrabold leading-none text-slate-900 tracking-tight font-display">STEMPEL KITO</h1>

@@ -224,7 +224,33 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
   }, [filteredMonthlyRecords]);
 
   // Premium PDF Monthly Report Exporter with Kop Surat and Auto Page Breaks
-  const handleExportMonthlyPDF = () => {
+  const handleExportMonthlyPDF = async () => {
+    // Helper to asynchronously convert external emblem to base64
+    const loadEmblemBase64 = (): Promise<string> => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL('image/png'));
+          } else {
+            resolve('');
+          }
+        };
+        img.onerror = () => {
+          resolve('');
+        };
+        img.src = 'https://upload.wikimedia.org/wikipedia/commons/9/90/LOGO_KOTA_TANJUNG_BALAI.png';
+      });
+    };
+
+    const logoBase64 = await loadEmblemBase64();
+
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -265,27 +291,31 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     };
 
     // Letterhead (KOP SURAT)
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 14, 11, 15, 19);
+    }
+
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(30, 41, 59);
-    doc.text("PEMERINTAH KOTA TANJUNGBALAI", docWidth / 2, currentY, { align: 'center' });
+    doc.text("PEMERINTAH KOTA TANJUNGBALAI", 112.5, currentY, { align: 'center' });
     
     currentY += 5;
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(15, 118, 110); // teal-700
-    doc.text("DINAS SOSIAL - SEKRETARIAT STEMPEL KITO", docWidth / 2, currentY, { align: 'center' });
+    doc.text("DINAS SOSIAL - SEKRETARIAT STEMPEL KITO", 112.5, currentY, { align: 'center' });
     
     currentY += 4.5;
     doc.setFont('Helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text("Jl. Jenderal Sudirman No. 12 Tanjungbalai, Kode Pos: 21321, Sumatera Utara", docWidth / 2, currentY, { align: 'center' });
+    doc.text("Jl. Jenderal Sudirman No. 12 Tanjungbalai, Kode Pos: 21321, Sumatera Utara", 112.5, currentY, { align: 'center' });
     
     currentY += 4;
     doc.setFont('Helvetica', 'oblique');
     doc.setFontSize(7.5);
-    doc.text("Email: slrttjbalai@gmail.com   |   Sistem Integrasi Penanganan Kemiskinan Berbasis Cloud", docWidth / 2, currentY, { align: 'center' });
+    doc.text("Email: slrttjbalai@gmail.com   |   Sistem Integrasi Penanganan Kemiskinan Berbasis Cloud", 112.5, currentY, { align: 'center' });
     
     currentY += 3;
     doc.setDrawColor(15, 118, 110);
@@ -434,11 +464,11 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
       doc.setTextColor(255, 255, 255);
       doc.text("No", leftMargin + 2, currentY + 5.5);
       doc.text("Kelurahan", leftMargin + 9, currentY + 5.5);
-      doc.text("Kecamatan", leftMargin + 48, currentY + 5.5);
-      doc.text("Total Target", leftMargin + 98, currentY + 5.5, { align: 'center' });
-      doc.text("Sudah Dikunjungi", leftMargin + 125, currentY + 5.5, { align: 'center' });
-      doc.text("Sisa Antrean", leftMargin + 152, currentY + 5.5, { align: 'center' });
-      doc.text("Persentase Capaian", leftMargin + 175, currentY + 5.5, { align: 'center' });
+      doc.text("Kecamatan", leftMargin + 43, currentY + 5.5);
+      doc.text("Total Target", leftMargin + 91, currentY + 5.5, { align: 'center' });
+      doc.text("Sudah Dikunjungi", leftMargin + 118, currentY + 5.5, { align: 'center' });
+      doc.text("Sisa Antrean", leftMargin + 144, currentY + 5.5, { align: 'center' });
+      doc.text("Persentase Capaian", leftMargin + 168, currentY + 5.5, { align: 'center' });
       currentY += 8;
     };
 
@@ -475,22 +505,22 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
       doc.text(idx.toString(), leftMargin + 2, currentY + 4.5);
       doc.setFont('Helvetica', 'normal');
       doc.text(row.kelurahan, leftMargin + 9, currentY + 4.5);
-      doc.text(row.kecamatan, leftMargin + 48, currentY + 4.5);
+      doc.text(row.kecamatan, leftMargin + 43, currentY + 4.5);
 
       doc.setFont('Helvetica', 'bold');
-      doc.text(row.total.toString(), leftMargin + 98, currentY + 4.5, { align: 'center' });
-      doc.text(row.visited.toString(), leftMargin + 125, currentY + 4.5, { align: 'center' });
+      doc.text(row.total.toString(), leftMargin + 91, currentY + 4.5, { align: 'center' });
+      doc.text(row.visited.toString(), leftMargin + 118, currentY + 4.5, { align: 'center' });
       
       if (row.pending > 0) {
         doc.setTextColor(185, 28, 28); // Highlight kelurahan with pending audits in clear red
       } else {
         doc.setTextColor(30, 41, 59);
       }
-      doc.text(row.pending.toString(), leftMargin + 152, currentY + 4.5, { align: 'center' });
+      doc.text(row.pending.toString(), leftMargin + 144, currentY + 4.5, { align: 'center' });
       doc.setTextColor(30, 41, 59);
 
       doc.setFont('Helvetica', 'bold');
-      doc.text(`${row.percentage}%`, leftMargin + 175, currentY + 4.5, { align: 'center' });
+      doc.text(`${row.percentage}%`, leftMargin + 168, currentY + 4.5, { align: 'center' });
       doc.setFont('Helvetica', 'normal');
 
       sumTotal += row.total;
@@ -514,12 +544,12 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
 
     doc.setFont('Helvetica', 'bold');
     doc.text("TOTAL KOTA TANJUNGBALAI", leftMargin + 9, currentY + 5.5);
-    doc.text(sumTotal.toString(), leftMargin + 98, currentY + 5.5, { align: 'center' });
-    doc.text(sumVisited.toString(), leftMargin + 125, currentY + 5.5, { align: 'center' });
-    doc.text(sumPending.toString(), leftMargin + 152, currentY + 5.5, { align: 'center' });
+    doc.text(sumTotal.toString(), leftMargin + 91, currentY + 5.5, { align: 'center' });
+    doc.text(sumVisited.toString(), leftMargin + 118, currentY + 5.5, { align: 'center' });
+    doc.text(sumPending.toString(), leftMargin + 144, currentY + 5.5, { align: 'center' });
     
     const overallPercent = sumTotal > 0 ? Math.round((sumVisited / sumTotal) * 100) : 0;
-    doc.text(`${overallPercent}%`, leftMargin + 175, currentY + 5.5, { align: 'center' });
+    doc.text(`${overallPercent}%`, leftMargin + 168, currentY + 5.5, { align: 'center' });
 
     // Real-time precise text clipper to prevent overlaps and out-of-bounds text
     const clipText = (text: string, maxWidth: number): string => {
