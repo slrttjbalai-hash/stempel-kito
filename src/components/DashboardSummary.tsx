@@ -14,7 +14,7 @@ import {
   Pie,
   Cell
 } from 'recharts';
-import { SLRTRecord } from '../types';
+import { SLRTRecord, TANJUNGBALAI_LOCATIONS } from '../types';
 import { 
   Building2, 
   CheckCircle, 
@@ -153,6 +153,74 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
         percentage
       };
     }).filter(k => k.total > 0 || standardKec.includes(k.kecamatan));
+  }, [filteredMonthlyRecords]);
+
+  // Summarize visit count per village/ward (Kelurahan) for this filtered month
+  const monthlyKelurahanSummary = useMemo(() => {
+    const items: { kelurahan: string; kecamatan: string; total: number; visited: number; pending: number; percentage: number }[] = [];
+    
+    // Build from standard location map
+    Object.entries(TANJUNGBALAI_LOCATIONS).forEach(([kec, kels]) => {
+      kels.forEach(kel => {
+        const recordsInKel = filteredMonthlyRecords.filter(r => 
+          (r.kelurahan || '').trim().toLowerCase() === kel.toLowerCase()
+        );
+        const total = recordsInKel.length;
+        const visited = recordsInKel.filter(r => r.statusKunjungan === 'Sudah Dikunjungi').length;
+        const pending = total - visited;
+        const percentage = total > 0 ? Math.round((visited / total) * 100) : 0;
+        
+        items.push({
+          kelurahan: kel,
+          kecamatan: kec,
+          total,
+          visited,
+          pending,
+          percentage
+        });
+      });
+    });
+
+    // Capture standard kelurahans lower case mapping
+    const standardKelsLower = new Set(
+      Object.values(TANJUNGBALAI_LOCATIONS).flat().map(k => k.toLowerCase())
+    );
+
+    // Also capture any non-standard kelurahans
+    filteredMonthlyRecords.forEach(r => {
+      if (r.kelurahan) {
+        const trimmed = r.kelurahan.trim();
+        if (trimmed && !standardKelsLower.has(trimmed.toLowerCase())) {
+          const kec = r.kecamatan ? r.kecamatan.trim() : 'Lainnya';
+          
+          if (!items.some(it => it.kelurahan.toLowerCase() === trimmed.toLowerCase())) {
+            const recordsInKel = filteredMonthlyRecords.filter(item => 
+              (item.kelurahan || '').trim().toLowerCase() === trimmed.toLowerCase()
+            );
+            const total = recordsInKel.length;
+            const visited = recordsInKel.filter(item => item.statusKunjungan === 'Sudah Dikunjungi').length;
+            const pending = total - visited;
+            const percentage = total > 0 ? Math.round((visited / total) * 100) : 0;
+
+            items.push({
+              kelurahan: trimmed,
+              kecamatan: kec,
+              total,
+              visited,
+              pending,
+              percentage
+            });
+          }
+        }
+      }
+    });
+
+    // Sort: First by Kecamatan name, then by Kelurahan name
+    return items.sort((a, b) => {
+      const kecCompare = a.kecamatan.localeCompare(b.kecamatan);
+      if (kecCompare !== 0) return kecCompare;
+      return a.kelurahan.localeCompare(b.kelurahan);
+    });
   }, [filteredMonthlyRecords]);
 
   // Premium PDF Monthly Report Exporter with Kop Surat and Auto Page Breaks
@@ -346,32 +414,35 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
 
     currentY += 24;
 
-    // SECTION 2: KECAMATAN BREAKDOWN TABLE
-    checkSpaceAndBreaks(60);
+    // SECTION 2: KELURAHAN BREAKDOWN TABLE (MORE DETAILED)
+    checkSpaceAndBreaks(30);
 
     doc.setFillColor(241, 245, 249);
     doc.rect(leftMargin, currentY, usableWidth, 6, 'F');
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 118, 110);
-    doc.text("II. RINGKASAN DISTRIBUSI AUDIT KUNJUNGAN PER KECAMATAN", leftMargin + 3, currentY + 4.5);
+    doc.text("II. RINGKASAN DISTRIBUSI AUDIT KUNJUNGAN PER KELURAHAN", leftMargin + 3, currentY + 4.5);
 
     currentY += 10;
 
-    // Header
-    doc.setFillColor(15, 118, 110);
-    doc.rect(leftMargin, currentY, usableWidth, 8, 'F');
-    doc.setFont('Helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(255, 255, 255);
-    doc.text("No", leftMargin + 3, currentY + 5.5);
-    doc.text("Kecamatan", leftMargin + 12, currentY + 5.5);
-    doc.text("Total Aduan", leftMargin + 75, currentY + 5.5, { align: 'center' });
-    doc.text("Sudah Dikunjungi", leftMargin + 105, currentY + 5.5, { align: 'center' });
-    doc.text("Sisa Antrean", leftMargin + 135, currentY + 5.5, { align: 'center' });
-    doc.text("Persentase Capaian", leftMargin + 165, currentY + 5.5, { align: 'center' });
+    const drawKelurahanTableHeader = () => {
+      doc.setFillColor(15, 118, 110);
+      doc.rect(leftMargin, currentY, usableWidth, 8, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text("No", leftMargin + 2, currentY + 5.5);
+      doc.text("Kelurahan", leftMargin + 9, currentY + 5.5);
+      doc.text("Kecamatan", leftMargin + 48, currentY + 5.5);
+      doc.text("Total Target", leftMargin + 98, currentY + 5.5, { align: 'center' });
+      doc.text("Sudah Dikunjungi", leftMargin + 125, currentY + 5.5, { align: 'center' });
+      doc.text("Sisa Antrean", leftMargin + 152, currentY + 5.5, { align: 'center' });
+      doc.text("Persentase Capaian", leftMargin + 175, currentY + 5.5, { align: 'center' });
+      currentY += 8;
+    };
 
-    currentY += 8;
+    drawKelurahanTableHeader();
 
     let idx = 1;
     let sumTotal = 0;
@@ -379,10 +450,18 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     let sumPending = 0;
 
     doc.setFont('Helvetica', 'normal');
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setTextColor(30, 41, 59);
 
-    monthlyKecamatanSummary.forEach((row) => {
+    monthlyKelurahanSummary.forEach((row) => {
+      if (currentY + 6.5 > 270) {
+        currentY = startNewPage();
+        drawKelurahanTableHeader();
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(30, 41, 59);
+      }
+
       if (idx % 2 === 0) {
         doc.setFillColor(248, 250, 252);
         doc.rect(leftMargin, currentY, usableWidth, 6.5, 'F');
@@ -393,14 +472,25 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
       doc.line(leftMargin, currentY + 6.5, docWidth - rightMargin, currentY + 6.5);
 
       doc.setFont('Helvetica', 'bold');
-      doc.text(idx.toString(), leftMargin + 3, currentY + 4.5);
+      doc.text(idx.toString(), leftMargin + 2, currentY + 4.5);
       doc.setFont('Helvetica', 'normal');
-      doc.text(row.kecamatan, leftMargin + 12, currentY + 4.5);
-      doc.text(row.total.toString(), leftMargin + 75, currentY + 4.5, { align: 'center' });
-      doc.text(row.visited.toString(), leftMargin + 105, currentY + 4.5, { align: 'center' });
-      doc.text(row.pending.toString(), leftMargin + 135, currentY + 4.5, { align: 'center' });
+      doc.text(row.kelurahan, leftMargin + 9, currentY + 4.5);
+      doc.text(row.kecamatan, leftMargin + 48, currentY + 4.5);
+
       doc.setFont('Helvetica', 'bold');
-      doc.text(`${row.percentage}%`, leftMargin + 165, currentY + 4.5, { align: 'center' });
+      doc.text(row.total.toString(), leftMargin + 98, currentY + 4.5, { align: 'center' });
+      doc.text(row.visited.toString(), leftMargin + 125, currentY + 4.5, { align: 'center' });
+      
+      if (row.pending > 0) {
+        doc.setTextColor(185, 28, 28); // Highlight kelurahan with pending audits in clear red
+      } else {
+        doc.setTextColor(30, 41, 59);
+      }
+      doc.text(row.pending.toString(), leftMargin + 152, currentY + 4.5, { align: 'center' });
+      doc.setTextColor(30, 41, 59);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text(`${row.percentage}%`, leftMargin + 175, currentY + 4.5, { align: 'center' });
       doc.setFont('Helvetica', 'normal');
 
       sumTotal += row.total;
@@ -411,6 +501,10 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     });
 
     // Total row
+    if (currentY + 8 > 270) {
+      currentY = startNewPage();
+    }
+
     doc.setFillColor(241, 245, 249);
     doc.rect(leftMargin, currentY, usableWidth, 8, 'F');
     doc.setDrawColor(226, 232, 240);
@@ -419,13 +513,33 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     doc.line(leftMargin, currentY + 8, docWidth - rightMargin, currentY + 8);
 
     doc.setFont('Helvetica', 'bold');
-    doc.text("TOTAL KOTA TANJUNGBALAI", leftMargin + 12, currentY + 5.5);
-    doc.text(sumTotal.toString(), leftMargin + 75, currentY + 5.5, { align: 'center' });
-    doc.text(sumVisited.toString(), leftMargin + 105, currentY + 5.5, { align: 'center' });
-    doc.text(sumPending.toString(), leftMargin + 135, currentY + 5.5, { align: 'center' });
+    doc.text("TOTAL KOTA TANJUNGBALAI", leftMargin + 9, currentY + 5.5);
+    doc.text(sumTotal.toString(), leftMargin + 98, currentY + 5.5, { align: 'center' });
+    doc.text(sumVisited.toString(), leftMargin + 125, currentY + 5.5, { align: 'center' });
+    doc.text(sumPending.toString(), leftMargin + 152, currentY + 5.5, { align: 'center' });
     
     const overallPercent = sumTotal > 0 ? Math.round((sumVisited / sumTotal) * 100) : 0;
-    doc.text(`${overallPercent}%`, leftMargin + 165, currentY + 5.5, { align: 'center' });
+    doc.text(`${overallPercent}%`, leftMargin + 175, currentY + 5.5, { align: 'center' });
+
+    // Real-time precise text clipper to prevent overlaps and out-of-bounds text
+    const clipText = (text: string, maxWidth: number): string => {
+      if (!text) return '-';
+      const fontSize = doc.getFontSize();
+      const textWidthMm = doc.getStringUnitWidth(text) * fontSize * 0.352778;
+      if (textWidthMm <= maxWidth) {
+        return text;
+      }
+      
+      let truncated = text;
+      while (truncated.length > 3) {
+        truncated = truncated.slice(0, -1);
+        const currentWidth = doc.getStringUnitWidth(truncated + '...') * fontSize * 0.352778;
+        if (currentWidth <= maxWidth) {
+          return truncated + '...';
+        }
+      }
+      return truncated;
+    };
 
     currentY += 15;
 
@@ -450,12 +564,12 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(7);
     doc.setTextColor(255, 255, 255);
-    doc.text("No", leftMargin + 3, currentY + 4.5);
-    doc.text("Nama Klien", leftMargin + 12, currentY + 4.5);
-    doc.text("Kelurahan / Kecamatan", leftMargin + 48, currentY + 4.5);
-    doc.text("Tanggal Audit", leftMargin + 100, currentY + 4.5);
-    doc.text("Status SOS", leftMargin + 132, currentY + 4.5);
-    doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 150, currentY + 4.5);
+    doc.text("No", leftMargin + 1, currentY + 4.5);
+    doc.text("Nama Klien", leftMargin + 8, currentY + 4.5);
+    doc.text("Kelurahan / Kecamatan", leftMargin + 43, currentY + 4.5);
+    doc.text("Tanggal Audit", leftMargin + 84, currentY + 4.5);
+    doc.text("Status SOS", leftMargin + 116, currentY + 4.5);
+    doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 133, currentY + 4.5);
 
     currentY += 7;
 
@@ -484,18 +598,24 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
         doc.setFont('Helvetica', 'bold');
         doc.setFontSize(7.5);
         doc.setTextColor(51, 65, 85); // Explicitly reset text color to dark gray so that data is readable (was white)
-        doc.text(rId.toString(), leftMargin + 3, currentY + 4.2);
-        doc.text(item.namaKlien || '-', leftMargin + 12, currentY + 4.2);
+        doc.text(rId.toString(), leftMargin + 1, currentY + 4.2);
+        doc.text(clipText(item.namaKlien || '-', 34), leftMargin + 8, currentY + 4.2);
         doc.setFont('Helvetica', 'normal');
-        doc.text(`${item.kelurahan || '-'}, ${item.kecamatan || '-'}`, leftMargin + 48, currentY + 4.2);
+        doc.text(clipText(`${item.kelurahan || '-'}, ${item.kecamatan || '-'}`, 40), leftMargin + 43, currentY + 4.2);
         
         let tgl = item.tanggalPemeriksaan || item.hariTanggal || '-';
         if (tgl.includes(',')) {
           tgl = tgl.split(',')[1].trim();
         }
-        doc.text(tgl, leftMargin + 100, currentY + 4.2);
-        doc.text(item.status || 'Miskin', leftMargin + 132, currentY + 4.2);
-        doc.text(item.namaFasilitator || '-', leftMargin + 150, currentY + 4.2);
+        if (tgl.toLowerCase().includes('pukul')) {
+          tgl = tgl.replace(/pukul\s+(\d{1,2})[\s.:](\d{1,2})[\s.:](\d{1,2})\b/gi, '$1:$2');
+          tgl = tgl.replace(/\s+wib/gi, '');
+        }
+        doc.text(clipText(tgl, 31), leftMargin + 84, currentY + 4.2);
+        doc.text(clipText(item.status || 'Miskin', 16), leftMargin + 116, currentY + 4.2);
+        
+        const facilitatorName = item.namaPendata || item.namaFasilitator || '-';
+        doc.text(clipText(facilitatorName, 46), leftMargin + 133, currentY + 4.2);
 
         rId++;
         currentY += 6;
@@ -524,12 +644,12 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(7);
     doc.setTextColor(255, 255, 255);
-    doc.text("No", leftMargin + 3, currentY + 4.5);
-    doc.text("Nama Klien", leftMargin + 12, currentY + 4.5);
-    doc.text("Kelurahan / Kecamatan", leftMargin + 48, currentY + 4.5);
-    doc.text("Tanggal Registrasi", leftMargin + 100, currentY + 4.5);
-    doc.text("Status SOS", leftMargin + 132, currentY + 4.5);
-    doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 150, currentY + 4.5);
+    doc.text("No", leftMargin + 1, currentY + 4.5);
+    doc.text("Nama Klien", leftMargin + 8, currentY + 4.5);
+    doc.text("Kelurahan / Kecamatan", leftMargin + 43, currentY + 4.5);
+    doc.text("Tanggal Registrasi", leftMargin + 84, currentY + 4.5);
+    doc.text("Status SOS", leftMargin + 116, currentY + 4.5);
+    doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 133, currentY + 4.5);
 
     currentY += 7;
 
@@ -558,18 +678,24 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
         doc.setFont('Helvetica', 'bold');
         doc.setFontSize(7.5);
         doc.setTextColor(51, 65, 85); // Explicitly reset text color to dark gray
-        doc.text(pId.toString(), leftMargin + 3, currentY + 4.2);
-        doc.text(item.namaKlien || '-', leftMargin + 12, currentY + 4.2);
+        doc.text(pId.toString(), leftMargin + 1, currentY + 4.2);
+        doc.text(clipText(item.namaKlien || '-', 34), leftMargin + 8, currentY + 4.2);
         doc.setFont('Helvetica', 'normal');
-        doc.text(`${item.kelurahan || '-'}, ${item.kecamatan || '-'}`, leftMargin + 48, currentY + 4.2);
+        doc.text(clipText(`${item.kelurahan || '-'}, ${item.kecamatan || '-'}`, 40), leftMargin + 43, currentY + 4.2);
         
         let tgl = item.hariTanggal || '-';
         if (tgl.includes(',')) {
           tgl = tgl.split(',')[1].trim();
         }
-        doc.text(tgl, leftMargin + 100, currentY + 4.2);
-        doc.text(item.status || 'Miskin', leftMargin + 132, currentY + 4.2);
-        doc.text(item.namaFasilitator || item.namaPendata || '-', leftMargin + 150, currentY + 4.2);
+        if (tgl.toLowerCase().includes('pukul')) {
+          tgl = tgl.replace(/pukul\s+(\d{1,2})[\s.:](\d{1,2})[\s.:](\d{1,2})\b/gi, '$1:$2');
+          tgl = tgl.replace(/\s+wib/gi, '');
+        }
+        doc.text(clipText(tgl, 31), leftMargin + 84, currentY + 4.2);
+        doc.text(clipText(item.status || 'Miskin', 16), leftMargin + 116, currentY + 4.2);
+        
+        const facilitatorName = item.namaPendata || item.namaFasilitator || '-';
+        doc.text(clipText(facilitatorName, 46), leftMargin + 133, currentY + 4.2);
 
         pId++;
         currentY += 6;
@@ -958,28 +1084,32 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
           {/* Right Summary Table Preview */}
           <div className="lg:col-span-8 bg-white rounded-xl border border-slate-200 overflow-hidden">
             <div className="bg-slate-100 px-4 py-2 border-b border-slate-200 flex items-center justify-between font-mono text-[9px] font-black text-slate-500 uppercase tracking-wider">
-              <span>PRATINJAU RANGKUMAN KUNJUNGAN PER KECAMATAN ({selectedMonth.toUpperCase()} {selectedYear})</span>
+              <span>PRATINJAU RANGKUMAN KUNJUNGAN PER KELURAHAN ({selectedMonth.toUpperCase()} {selectedYear})</span>
               <span className="text-[8px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-md font-sans">SINKRON</span>
             </div>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
               <table className="w-full text-left text-xs font-sans">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[9px] font-black text-slate-400 uppercase tracking-widest sticky top-0 bg-white z-10 shadow-xs">
+                    <th className="py-2.5 px-3.5">Kelurahan</th>
                     <th className="py-2.5 px-3.5">Kecamatan</th>
-                    <th className="py-2.5 px-3.5 text-center">Total Target (Aduan)</th>
+                    <th className="py-2.5 px-3.5 text-center">Total Target</th>
                     <th className="py-2.5 px-3.5 text-center text-emerald-700">Sudah Dikunjungi</th>
                     <th className="py-2.5 px-3.5 text-center text-amber-700">Belum Dikunjungi</th>
-                    <th className="py-2.5 px-3.5 text-right">Rasio Capaian</th>
+                    <th className="py-2.5 px-3.5 text-right pr-6">Rasio Capaian</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-150 text-slate-700">
-                  {monthlyKecamatanSummary.map((row) => (
-                    <tr key={row.kecamatan} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="py-2.5 px-3.5 font-bold text-slate-800">{row.kecamatan}</td>
+                  {monthlyKelurahanSummary.map((row) => (
+                    <tr key={row.kelurahan} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="py-2.5 px-3.5 font-bold text-slate-800">{row.kelurahan}</td>
+                      <td className="py-2.5 px-3.5 text-slate-500 text-[11px]">{row.kecamatan}</td>
                       <td className="py-2.5 px-3.5 text-center font-mono font-bold text-slate-900">{row.total}</td>
                       <td className="py-2.5 px-3.5 text-center font-mono font-bold text-emerald-650">{row.visited}</td>
-                      <td className="py-2.5 px-3.5 text-center font-mono font-bold text-amber-605">{row.pending}</td>
-                      <td className="py-2.5 px-3.5 text-right">
+                      <td className={`py-2.5 px-3.5 text-center font-mono font-bold ${row.pending > 0 ? 'text-rose-600 bg-rose-50/50' : 'text-slate-400'}`}>
+                        {row.pending}
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right pr-6">
                         <span className={`text-[9.5px] font-black px-1.5 py-0.5 rounded-md border ${
                           row.percentage === 100 
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-150' 
@@ -994,7 +1124,7 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
                   ))}
                   {filteredMonthlyRecords.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="py-8 text-center text-slate-400 font-bold text-[11px] italic">
+                      <td colSpan={6} className="py-8 text-center text-slate-400 font-bold text-[11px] italic">
                         Tidak ada data aduan atau kunjungan lapangan terdaftar sepanjang periode {selectedMonth} {selectedYear}.
                       </td>
                     </tr>

@@ -991,28 +991,30 @@ export default function App() {
             }
           }
 
-          // Combine cloud records with base INITIAL_RECORDS so there is always the demo baseline
-          const allBaseRecords = [...normalized];
-          INITIAL_RECORDS.forEach(initRec => {
-            if (!allBaseRecords.some(r => r.id === initRec.id || (r.nik && r.nik === initRec.nik))) {
-              allBaseRecords.push(initRec);
+          // If the cloud records are empty (e.g. brand new spreadsheet), we seed/initialize with INITIAL_RECORDS once.
+          // Otherwise, we use and trust the synced cloud dataset as the absolute source of truth to avoid resurrecting deleted entities.
+          let recordsToMerge = [...normalized];
+          if (recordsToMerge.length === 0) {
+            const locallyRecorded = localStorage.getItem('slrt_records');
+            if (!locallyRecorded || locallyRecorded === '[]') {
+              recordsToMerge = [...INITIAL_RECORDS];
             }
-          });
+          }
 
-          const merged = mergeRecordsWithOverrides(allBaseRecords);
+          const merged = mergeRecordsWithOverrides(recordsToMerge);
           setRecords(merged);
           localStorage.setItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(merged)));
         }
         if (json.facilitators && Array.isArray(json.facilitators)) {
-          // Combine cloud facilitators with base INITIAL_FACILITATORS
-          const allBaseFacs = [...json.facilitators];
-          INITIAL_FACILITATORS.forEach(initFac => {
-            if (!allBaseFacs.some(f => f.id === initFac.id || f.email === initFac.email)) {
-              allBaseFacs.push(initFac);
+          let facsToProcess = [...json.facilitators];
+          if (facsToProcess.length === 0) {
+            const locallyRecordedFacs = localStorage.getItem('slrt_facilitators');
+            if (!locallyRecordedFacs || locallyRecordedFacs === '[]') {
+              facsToProcess = [...INITIAL_FACILITATORS];
             }
-          });
+          }
 
-          const reconciled = getReconciledFacilitators(allBaseFacs);
+          const reconciled = getReconciledFacilitators(facsToProcess);
           setFacilitators(reconciled);
           localStorage.setItem('slrt_facilitators', JSON.stringify(reconciled));
         }
@@ -1379,13 +1381,14 @@ export default function App() {
       if (response.ok) {
         const json = await response.json();
         if (json.facilitators && Array.isArray(json.facilitators)) {
-          const allBaseFacs = [...json.facilitators];
-          INITIAL_FACILITATORS.forEach(initFac => {
-            if (!allBaseFacs.some(f => f.id === initFac.id || f.email === initFac.email)) {
-              allBaseFacs.push(initFac);
+          let facsToProcess = [...json.facilitators];
+          if (facsToProcess.length === 0) {
+            const locallyRecordedFacs = localStorage.getItem('slrt_facilitators');
+            if (!locallyRecordedFacs || locallyRecordedFacs === '[]') {
+              facsToProcess = [...INITIAL_FACILITATORS];
             }
-          });
-          const reconciled = getReconciledFacilitators(allBaseFacs);
+          }
+          const reconciled = getReconciledFacilitators(facsToProcess);
           currentFacs = reconciled;
           setFacilitators(reconciled);
           localStorage.setItem('slrt_facilitators', JSON.stringify(reconciled));
@@ -1406,15 +1409,15 @@ export default function App() {
           });
           const normalized = filtered.map(normalizeRecord);
 
-          // Combine cloud records with base INITIAL_RECORDS so there is always the demo baseline
-          const allBaseRecords = [...normalized];
-          INITIAL_RECORDS.forEach(initRec => {
-            if (!allBaseRecords.some(r => r.id === initRec.id || (r.nik && r.nik === initRec.nik))) {
-              allBaseRecords.push(initRec);
+          let recordsToMerge = [...normalized];
+          if (recordsToMerge.length === 0) {
+            const locallyRecorded = localStorage.getItem('slrt_records');
+            if (!locallyRecorded || locallyRecorded === '[]') {
+              recordsToMerge = [...INITIAL_RECORDS];
             }
-          });
+          }
 
-          const merged = mergeRecordsWithOverrides(allBaseRecords);
+          const merged = mergeRecordsWithOverrides(recordsToMerge);
           setRecords(merged);
           localStorage.setItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(merged)));
         }
@@ -2042,9 +2045,11 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
   // Global-like in-memory cache variable inside App closure to prevent GPS hardware wait lag on consecutive captures
   const cachedGeotagCoordinatesRef = useRef<{ latitude: number; longitude: number; timestamp: string; address: string } | null>(null);
 
-  // Silent automatic GPS coordinate pre-fetching on startup
+  // Silent automatic GPS coordinate pre-fetching & continuous background high-accuracy tracking on startup
   useEffect(() => {
+    let watchId: number | null = null;
     if (navigator.geolocation) {
+      // 1. Initial high-accuracy capture
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const today = new Date();
@@ -2053,22 +2058,44 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
             latitude: Number(pos.coords.latitude.toFixed(6)),
             longitude: Number(pos.coords.longitude.toFixed(6)),
             timestamp: timestampStr,
-            address: 'Survei Geotagging Real-time Lapangan'
+            address: 'GPS Akurasi Tinggi Lapangan'
           };
         },
         () => {},
-        { enableHighAccuracy: false, timeout: 5000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+
+      // 2. Continuous high-accuracy watcher to refine active GPS coordinates dynamically
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const today = new Date();
+          const timestampStr = today.toLocaleString('id-ID') + ' WIB';
+          cachedGeotagCoordinatesRef.current = {
+            latitude: Number(pos.coords.latitude.toFixed(6)),
+            longitude: Number(pos.coords.longitude.toFixed(6)),
+            timestamp: timestampStr,
+            address: 'GPS Akurasi Tinggi Lapangan'
+          };
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     }
+
+    return () => {
+      if (watchId !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
   }, []);
 
-  // Geotagging Coordinates Utility - Defaults to Tanjungbalai (with 0ms instant cached-speed lookup)
+  // Geotagging Coordinates Utility - Now with High-Accuracy and Background GPS synchronization
   const getGeotagCoordinates = (): Promise<{ latitude: number; longitude: number; timestamp: string; address: string }> => {
     const today = new Date();
     const timestampStr = today.toLocaleString('id-ID') + ' WIB';
 
     if (cachedGeotagCoordinatesRef.current) {
-      // Return the cached position with fresh timezone timestamp immediately without any hardware lookup delay!
+      // Return the background and watcher-refined position with fresh timezone timestamp immediately
       return Promise.resolve({
         ...cachedGeotagCoordinatesRef.current,
         timestamp: timestampStr
@@ -2076,11 +2103,24 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     }
 
     return new Promise((resolve) => {
+      let fallbackLat = 2.9645;
+      let fallbackLng = 99.8005;
+      let fallbackAddress = 'GPS Estimasi Wilayah Kota';
+
+      if (selectedRecord && selectedRecord.kelurahan) {
+        const coords = KELURAHAN_COORDS[selectedRecord.kelurahan];
+        if (coords) {
+          fallbackLat = coords.lat;
+          fallbackLng = coords.lng;
+          fallbackAddress = `Pusat Kelurahan ${selectedRecord.kelurahan}, Tanjungbalai`;
+        }
+      }
+
       const defaultData = {
-        latitude: 2.9645,
-        longitude: 99.8005,
+        latitude: fallbackLat,
+        longitude: fallbackLng,
         timestamp: timestampStr,
-        address: 'Survei Geotagging Real-time Lapangan'
+        address: fallbackAddress
       };
 
       if (navigator.geolocation) {
@@ -2090,22 +2130,23 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               latitude: Number(pos.coords.latitude.toFixed(6)),
               longitude: Number(pos.coords.longitude.toFixed(6)),
               timestamp: timestampStr,
-              address: 'Survei Geotagging Real-time Lapangan'
+              address: 'GPS Akurasi Tinggi Lapangan'
             };
             cachedGeotagCoordinatesRef.current = result; // cache it for consecutive photos
             resolve(result);
           },
           () => {
-            const rLat = 2.9645 + (Math.random() - 0.5) * 0.005;
-            const rLon = 99.8005 + (Math.random() - 0.5) * 0.005;
+            // tight randomized fallback around selected kelurahan center or city center
+            const rLat = fallbackLat + (Math.random() - 0.5) * 0.001;
+            const rLon = fallbackLng + (Math.random() - 0.5) * 0.001;
             resolve({
               latitude: Number(rLat.toFixed(6)),
               longitude: Number(rLon.toFixed(6)),
               timestamp: timestampStr,
-              address: 'GPS Tanjungbalai, Sumatera Utara'
+              address: fallbackAddress
             });
           },
-          { enableHighAccuracy: false, timeout: 1200 } // Super fast low-timeout prevents app freezing while requesting geolocation
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 } // High-accuracy, realistic GPS lock timeout
         );
       } else {
         resolve(defaultData);
@@ -4279,8 +4320,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
             S
           </div>
           <div>
-            <h1 className="text-base font-extrabold leading-none text-slate-900 tracking-tight font-display">SLRT KITO</h1>
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mt-0.5">Sistem Layanan Rujukan Terpadu</p>
+            <h1 className="text-base font-extrabold leading-none text-slate-900 tracking-tight font-display">STEMPEL KITO</h1>
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mt-0.5">SENTRA PELAYANAN TERPADU MASYARAKAT KOTA TANJUNGBALAI</p>
           </div>
           
           {/* Cloud Database Synchronization Indicator */}
@@ -5978,41 +6019,43 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               </div>
             </div>
 
-            <div className="border-t border-slate-200 pt-2.5">
-              <span className="text-[8px] font-black text-slate-450 uppercase tracking-widest block mb-1.5">Backup JSON &amp; Impor Database</span>
-              <div className="grid grid-cols-3 gap-1">
+            {userRole === 'admin' && (
+              <div className="border-t border-slate-200 pt-2.5">
+                <span className="text-[8px] font-black text-slate-450 uppercase tracking-widest block mb-1.5">Backup JSON &amp; Impor Database</span>
+                <div className="grid grid-cols-3 gap-1">
+                  <button 
+                    onClick={handleExportJSON}
+                    className="bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 py-1.5 px-0.5 text-[8px] font-bold rounded-lg flex items-center justify-center gap-0.5 cursor-pointer transition-all text-slate-700 hover:text-indigo-700 font-sans"
+                    title="Ekspor seluruh data ke format JSON"
+                  >
+                    <Download className="w-3 h-3 text-slate-400 shrink-0" /> Ekspor JSON
+                  </button>
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 py-1.5 px-0.5 text-[8px] font-bold rounded-lg flex items-center justify-center gap-0.5 cursor-pointer transition-all text-slate-700 hover:text-indigo-700 font-sans"
+                    title="Impor pangkalan data dari berkas JSON"
+                  >
+                    <Upload className="w-3 h-3 text-slate-400 shrink-0" /> Impor JSON
+                  </button>
+                  <button 
+                    onClick={() => csvFileInputRef.current?.click()}
+                    className="bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 py-1.5 px-0.5 text-[8px] font-bold rounded-lg flex items-center justify-center gap-0.5 cursor-pointer transition-all text-slate-700 hover:text-emerald-700 font-sans"
+                    title="Impor records rujukan SLRT dari berkas CSV"
+                  >
+                    <FileSpreadsheet className="w-3 h-3 text-emerald-500 shrink-0" /> Impor CSV
+                  </button>
+                </div>
+                
                 <button 
-                  onClick={handleExportJSON}
-                  className="bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 py-1.5 px-0.5 text-[8px] font-bold rounded-lg flex items-center justify-center gap-0.5 cursor-pointer transition-all text-slate-700 hover:text-indigo-700 font-sans"
-                  title="Ekspor seluruh data ke format JSON"
+                  type="button"
+                  onClick={handleDownloadCSVTemplate}
+                  className="w-full mt-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-850 hover:text-emerald-900 py-1.5 px-2 text-[8.5px] font-extrabold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all uppercase tracking-wider shadow-xs"
+                  title="Unduh contoh template kolom CSV resmi SLRT Tanjungbalai"
                 >
-                  <Download className="w-3 h-3 text-slate-400 shrink-0" /> Ekspor JSON
-                </button>
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 py-1.5 px-0.5 text-[8px] font-bold rounded-lg flex items-center justify-center gap-0.5 cursor-pointer transition-all text-slate-700 hover:text-indigo-700 font-sans"
-                  title="Impor pangkalan data dari berkas JSON"
-                >
-                  <Upload className="w-3 h-3 text-slate-400 shrink-0" /> Impor JSON
-                </button>
-                <button 
-                  onClick={() => csvFileInputRef.current?.click()}
-                  className="bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 py-1.5 px-0.5 text-[8px] font-bold rounded-lg flex items-center justify-center gap-0.5 cursor-pointer transition-all text-slate-700 hover:text-emerald-700 font-sans"
-                  title="Impor records rujukan SLRT dari berkas CSV"
-                >
-                  <FileSpreadsheet className="w-3 h-3 text-emerald-500 shrink-0" /> Impor CSV
+                  📥 Unduh Template CSV SLRT
                 </button>
               </div>
-              
-              <button 
-                type="button"
-                onClick={handleDownloadCSVTemplate}
-                className="w-full mt-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-850 hover:text-emerald-900 py-1.5 px-2 text-[8.5px] font-extrabold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all uppercase tracking-wider shadow-xs"
-                title="Unduh contoh template kolom CSV resmi SLRT Tanjungbalai"
-              >
-                📥 Unduh Template CSV SLRT
-              </button>
-            </div>
+            )}
 
             {/* Pusat Sinkronisasi Real-Time (Active Web App) */}
             <div className="border-t border-slate-200 pt-3 flex flex-col gap-2">
@@ -6111,20 +6154,22 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               accept=".csv" 
               className="hidden" 
             />
-            <div className="flex flex-col gap-2.5 mt-2.5 pt-2 border-t border-slate-100">
-              <button 
-                onClick={handleResetToDemo}
-                className="text-[10px] text-slate-400 hover:text-indigo-600 text-left cursor-pointer transition-colors flex items-center gap-1"
-              >
-                <RotateCcw className="w-2.5 h-2.5" /> Atur Ulang Data Simulasi
-              </button>
-              <button 
-                onClick={handleClearDatabase}
-                className="text-[10px] text-slate-400 hover:text-rose-600 text-left cursor-pointer transition-colors flex items-center gap-1 font-bold"
-              >
-                <Trash2 className="w-2.5 h-2.5 text-rose-500" /> Kosongkan Semua Data Inputan
-              </button>
-            </div>
+            {userRole === 'admin' && (
+              <div className="flex flex-col gap-2.5 mt-2.5 pt-2 border-t border-slate-100">
+                <button 
+                  onClick={handleResetToDemo}
+                  className="text-[10px] text-slate-400 hover:text-indigo-600 text-left cursor-pointer transition-colors flex items-center gap-1"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" /> Atur Ulang Data Simulasi
+                </button>
+                <button 
+                  onClick={handleClearDatabase}
+                  className="text-[10px] text-slate-400 hover:text-rose-600 text-left cursor-pointer transition-colors flex items-center gap-1 font-bold"
+                >
+                  <Trash2 className="w-2.5 h-2.5 text-rose-500" /> Kosongkan Semua Data Inputan
+                </button>
+              </div>
+            )}
           </div>
 
         </section>
