@@ -231,30 +231,45 @@ function deleteRecordOverride(id: string) {
 // Helper to merge cloud records with local overrides
 function mergeRecordsWithOverrides(cloudRecords: SLRTRecord[]): SLRTRecord[] {
   try {
-    const savedOver = localStorage.getItem('slrt_record_overrides');
-    if (!savedOver) return cloudRecords;
-    const overrides = JSON.parse(savedOver);
-    
-    const mergedList = [...cloudRecords];
     const deletedIdsString = localStorage.getItem('slrt_deleted_record_ids') || '[]';
     let deletedIds: string[] = [];
     try { deletedIds = JSON.parse(deletedIdsString); } catch(e) {}
+
+    // Exclude any deleted, deleted-flagged, or deleted-status records from the main cloud list
+    const filteredCloud = cloudRecords.filter(rec => {
+      if (!rec) return false;
+      if (deletedIds.includes(rec.id)) return false;
+      if (rec.isDeleted === true || rec.isDeleted === 'true') return false;
+      if (rec.statusKunjungan === 'Dihapus' || rec.statusKunjungan === 'DELETED') return false;
+      return true;
+    });
+
+    const savedOver = localStorage.getItem('slrt_record_overrides');
+    if (!savedOver) return filteredCloud;
+    const overrides = JSON.parse(savedOver);
+    
+    const mergedList = [...filteredCloud];
 
     Object.keys(overrides).forEach(id => {
       // Do not include deleted overrides
       if (deletedIds.includes(id)) {
         return;
       }
+      
+      const localRec = overrides[id];
+      if (localRec && (localRec.isDeleted === true || localRec.isDeleted === 'true' || localRec.statusKunjungan === 'Dihapus' || localRec.statusKunjungan === 'DELETED')) {
+        return;
+      }
+
       const existingIndex = mergedList.findIndex(r => r.id === id);
       if (existingIndex !== -1) {
         const cloudRec = mergedList[existingIndex];
-        const localRec = overrides[id];
         
         // Cloud is source of truth for ground-truth verification!
         // If the cloud is marked as inspected/visited ('Sudah Dikunjungi'),
         // we must NOT downgrade it to 'Belum Dikunjungi' via a stale local override.
         const cloudIsVisited = cloudRec.statusKunjungan === 'Sudah Dikunjungi';
-        const localIsVisited = localRec.statusKunjungan === 'Sudah Dikunjungi';
+        const localIsVisited = localRec?.statusKunjungan === 'Sudah Dikunjungi';
 
         const mergedRecord = {
           ...cloudRec,
@@ -287,12 +302,20 @@ function mergeRecordsWithOverrides(cloudRecords: SLRTRecord[]): SLRTRecord[] {
         mergedList[existingIndex] = normalizeRecord(mergedRecord);
       } else {
         // Completely local record
-        mergedList.unshift(normalizeRecord(overrides[id]));
+        if (localRec) {
+          mergedList.unshift(normalizeRecord(localRec));
+        }
       }
     });
     return mergedList;
   } catch (e) {
     console.error("Gagal melakukan merge data lokal dengan awan:", e);
+    // Fallback: make sure we still filter the input list in the catch block if possible
+    try {
+      const deletedIdsString = localStorage.getItem('slrt_deleted_record_ids') || '[]';
+      const deletedIds = JSON.parse(deletedIdsString);
+      return cloudRecords.filter(r => r && !deletedIds.includes(r.id) && r.statusKunjungan !== 'Dihapus' && r.statusKunjungan !== 'DELETED');
+    } catch (_) {}
     return cloudRecords;
   }
 }
