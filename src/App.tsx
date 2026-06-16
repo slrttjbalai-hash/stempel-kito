@@ -651,7 +651,15 @@ export default function App() {
   // State for database records
   const [records, setRecords] = useState<SLRTRecord[]>(() => {
     const saved = localStorage.getItem('slrt_records');
-    let loaded: SLRTRecord[] = saved ? JSON.parse(saved) : INITIAL_RECORDS;
+    let loaded: SLRTRecord[] = INITIAL_RECORDS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          loaded = parsed;
+        }
+      } catch (err) {}
+    }
 
     const deletedIdsString = localStorage.getItem('slrt_deleted_record_ids') || '[]';
     try {
@@ -707,7 +715,15 @@ export default function App() {
   // Registered Field Facilitators state
   const [facilitators, setFacilitators] = useState<FacilitatorUser[]>(() => {
     const saved = localStorage.getItem('slrt_facilitators');
-    let fList = saved ? JSON.parse(saved) : INITIAL_FACILITATORS;
+    let fList = INITIAL_FACILITATORS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          fList = parsed;
+        }
+      } catch (err) {}
+    }
     
     // Filter out deleted facilitators
     try {
@@ -952,12 +968,28 @@ export default function App() {
             }
           }
 
-          const merged = mergeRecordsWithOverrides(normalized);
+          // Combine cloud records with base INITIAL_RECORDS so there is always the demo baseline
+          const allBaseRecords = [...normalized];
+          INITIAL_RECORDS.forEach(initRec => {
+            if (!allBaseRecords.some(r => r.id === initRec.id || (r.nik && r.nik === initRec.nik))) {
+              allBaseRecords.push(initRec);
+            }
+          });
+
+          const merged = mergeRecordsWithOverrides(allBaseRecords);
           setRecords(merged);
           localStorage.setItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(merged)));
         }
         if (json.facilitators && Array.isArray(json.facilitators)) {
-          const reconciled = getReconciledFacilitators(json.facilitators);
+          // Combine cloud facilitators with base INITIAL_FACILITATORS
+          const allBaseFacs = [...json.facilitators];
+          INITIAL_FACILITATORS.forEach(initFac => {
+            if (!allBaseFacs.some(f => f.id === initFac.id || f.email === initFac.email)) {
+              allBaseFacs.push(initFac);
+            }
+          });
+
+          const reconciled = getReconciledFacilitators(allBaseFacs);
           setFacilitators(reconciled);
           localStorage.setItem('slrt_facilitators', JSON.stringify(reconciled));
         }
@@ -1152,6 +1184,7 @@ export default function App() {
   const [filterVerifStartDate, setFilterVerifStartDate] = useState('');
   const [filterVerifEndDate, setFilterVerifEndDate] = useState('');
   const [filterBulanBerjalan, setFilterBulanBerjalan] = useState(false);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   // Selected Record state
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
@@ -1323,7 +1356,13 @@ export default function App() {
       if (response.ok) {
         const json = await response.json();
         if (json.facilitators && Array.isArray(json.facilitators)) {
-          const reconciled = getReconciledFacilitators(json.facilitators);
+          const allBaseFacs = [...json.facilitators];
+          INITIAL_FACILITATORS.forEach(initFac => {
+            if (!allBaseFacs.some(f => f.id === initFac.id || f.email === initFac.email)) {
+              allBaseFacs.push(initFac);
+            }
+          });
+          const reconciled = getReconciledFacilitators(allBaseFacs);
           currentFacs = reconciled;
           setFacilitators(reconciled);
           localStorage.setItem('slrt_facilitators', JSON.stringify(reconciled));
@@ -1343,7 +1382,16 @@ export default function App() {
                    rec.statusKunjungan !== 'DELETED';
           });
           const normalized = filtered.map(normalizeRecord);
-          const merged = mergeRecordsWithOverrides(normalized);
+
+          // Combine cloud records with base INITIAL_RECORDS so there is always the demo baseline
+          const allBaseRecords = [...normalized];
+          INITIAL_RECORDS.forEach(initRec => {
+            if (!allBaseRecords.some(r => r.id === initRec.id || (r.nik && r.nik === initRec.nik))) {
+              allBaseRecords.push(initRec);
+            }
+          });
+
+          const merged = mergeRecordsWithOverrides(allBaseRecords);
           setRecords(merged);
           localStorage.setItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(merged)));
         }
@@ -5431,7 +5479,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
           {/* ACTIVE RECORD SELECTOR & FILTERS (Only visible and useful on database screen) */}
           {activeTab === 'all-records' && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden max-h-[640px]">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden h-[900px] lg:h-[820px]">
               
               {/* Filter Headline */}
               <div className="p-4 border-b border-slate-150 bg-slate-50/50 flex flex-col gap-2.5 shrink-0">
@@ -5497,7 +5545,17 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   </select>
                 </div>
 
-                {/* filter by facilitator / petugas */}
+                {/* Advanced Filters Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                  className="w-full py-2 px-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 rounded-lg text-[9px] font-black flex items-center justify-center gap-1.5 transition-colors cursor-pointer animate-pulse"
+                >
+                  ⚙️ {showAdvancedFilters ? 'TUTUP DETAILS FILTER & STATS' : 'BUKA RENTANG TANGGAL, PETUGAS & STATISTIK'}
+                </button>
+
+                {showAdvancedFilters && (
+                  <>
                 <div>
                   <span className="text-[9px] font-black text-slate-500 block mb-1 uppercase tracking-wider">Fasilitator Lapangan :</span>
                   <select
@@ -5669,10 +5727,13 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     </div>
                   </div>
                 </div>
+                </>
+              )}
               </div>
 
               {/* INTERACTIVE HUD: PER KELURAHAN COVERS */}
-              <div className="bg-slate-50 border-y border-slate-200 p-3.5 flex flex-col gap-2 shrink-0">
+              {showAdvancedFilters && (
+                <div className="bg-slate-50 border-y border-slate-200 p-3.5 flex flex-col gap-2 shrink-0">
                 <div className="flex items-center justify-between flex-wrap gap-1">
                   <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5 font-display">
                     <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
@@ -5737,7 +5798,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                       })}
                   </div>
                 )}
-              </div>
+                </div>
+              )}
 
               {/* Sidebar list visitors queue */}
               <div className="flex-1 overflow-y-auto">

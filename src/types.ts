@@ -103,7 +103,169 @@ export const TANJUNGBALAI_LOCATIONS: { [kecamatan: string]: string[] } = {
   ]
 };
 
-export const INITIAL_RECORDS: SLRTRecord[] = [];
+export const INITIAL_RECORDS: SLRTRecord[] = [
+  {
+    id: "SLRT-2026-0001",
+    namaFasilitator: "Halimah",
+    kelurahan: "Pahang",
+    kecamatan: "Datuk Bandar",
+    hariTanggal: "12 Juni 2026",
+    namaKlien: "Ahmad Suhendra",
+    nik: "1274011203740001",
+    pekerjaanKrt: "Buruh Harian Lepas",
+    namaKuasa: "Sumarni (Istri)",
+    alamatKlien: "Jl. Jenderal Sudirman Gg. Setia No. 12, Kel. Pahang",
+    noTelpon: "085277443321",
+    dokumen: "Lengkap (KTP, KK, SKTM)",
+    status: "Sangat Miskin",
+    bantuanDiterima: "Belum Pernah Menerima Bantuan",
+    statusRumah: "Sewa Bulanan",
+    jenisPenerangan: "PLN Bersubsidi 450W",
+    mck: "Menumpang Tetangga",
+    pendapatanPerbulan: "850.000",
+    jenisPengaduan: "Permohonan Jaminan Kesehatan Daerah (Jamkesda) / KIS PBI karena sakit paru kronis.",
+    jenisLayanan: "Program Jaminan Kesehatan (PBI BPJS)",
+    isHighPriority: true,
+    statusKunjungan: "Belum Dikunjungi",
+    diinputOleh: "Admin",
+    bantuanDiterimaList: [],
+    indikatorSosialEkonomi: ["Pendapatan di bawah UMR / tidak menentu", "Kepala Keluarga janda / lansia / disabilitas", "Tidak memiliki jaminan kesehatan mandiri"],
+    kelayakanHuni: ["Dinding berbahan papan lapuk / seng / bambu", "Atap rumah bocor parah / seng keropos", "MCK menumpang / umum / tidak layak"],
+    latitude: 2.9565,
+    longitude: 99.7895,
+    statusHistory: [
+      {
+        status: "Belum Dikunjungi",
+        timestamp: "12 Juni 2026 14:30",
+        note: "Data pendaftaran baru berhasil divalidasi oleh Admin Dinsos.",
+        updatedBy: "Admin Dinsos"
+      }
+    ]
+  },
+  {
+    id: "SLRT-2026-0002",
+    namaFasilitator: "Budi Santoso",
+    kelurahan: "Karya",
+    kecamatan: "Tanjungbalai Selatan",
+    hariTanggal: "13 Juni 2026",
+    namaKlien: "Mariani",
+    nik: "1274024505670002",
+    pekerjaanKrt: "Penjual Pisang Goreng Keliling",
+    namaKuasa: "Mariani (Diri Sendiri)",
+    alamatKlien: "Jl. Veteran Lingkungan III, Kel. Karya",
+    noTelpon: "081366554433",
+    dokumen: "Ada (KTP, KK)",
+    status: "Miskin",
+    bantuanDiterima: "Hanya KIS PBI",
+    statusRumah: "Menumpang Keluarga",
+    jenisPenerangan: "PLN Bersubsidi 450W",
+    mck: "Sendiri Kurang Layak",
+    pendapatanPerbulan: "1.200.000",
+    jenisPengaduan: "Permohonan Program Keluarga Harapan (PKH) untuk menyokong biaya sekolah 3 anak yatim.",
+    jenisLayanan: "Program Keluarga Harapan (PKH)",
+    isHighPriority: false,
+    statusKunjungan: "Belum Dikunjungi",
+    diinputOleh: "Admin",
+    bantuanDiterimaList: ["KIS PBI APBD Kota / BPJS PBI"],
+    indikatorSosialEkonomi: ["Pendapatan di bawah UMR / tidak menentu", "Tanggungan anak sekolah aktif > 2 orang", "Tidak memiliki tabungan / aset berharga"],
+    kelayakanHuni: ["Atap rumah bocor parah / seng keropos", "Lantai bermaterial tanah atau semen retak kasar"],
+    latitude: 2.9612,
+    longitude: 99.8015,
+    statusHistory: [
+      {
+        status: "Belum Dikunjungi",
+        timestamp: "13 Juni 2026 09:12",
+        note: "Laporan rujukan masuk antrean pendaftaran faskes.",
+        updatedBy: "Admin Dinsos"
+      }
+    ]
+  },
+  {
+    id: "SLRT-2026-0003",
+    namaFasilitator: "Siti Rahma",
+    kelurahan: "Pasar Baru",
+    kecamatan: "Sei Tualang Raso",
+    hariTanggal: "14 Juni 2026",
+    namaKlien: "Zulkifli Sitorus",
+    nik: "1274032104620003",
+    pekerjaanKrt: "Nelayan Tradisional",
+    namaKuasa: "Zulkifli (Diri Sendiri)",
+    alamatKlien: "Jl. Pelabuhan Ujung No. 89, Kel. Pasar Baru",
+    noTelpon: "082165438890",
+    dokumen: "Lengkap (KTP, KK, SKTM, Kartu Nelayan)",
+    status: "Miskin",
+    bantuanDiterima: "Belum Pernah Menerima Bantuan",
+    statusRumah: "Milik Sendiri",
+    jenisPenerangan: "PLN Bersubsidi 450W",
+    mck: "Sendiri Layak",
+    pendapatanPerbulan: "1.100.000",
+    jenisPengaduan: "Permohonan bantuan modal usaha kecil perikanan/alat jaring nelayan serta bantuan sembako rutin (BPNT).",
+    jenisLayanan: "Sembako / BPNT (Bantuan Pangan Non Tunai)",
+    isHighPriority: false,
+    statusKunjungan: "Belum Dikunjungi",
+    diinputOleh: "Warga",
+    bantuanDiterimaList: [],
+    indikatorSosialEkonomi: ["Pendapatan di bawah UMR / tidak menentu", "Pengeluaran didominasi untuk pangan pokok"],
+    kelayakanHuni: ["Dinding berbahan papan lapuk / seng / bambu"],
+    latitude: 2.9815,
+    longitude: 99.8015,
+    statusHistory: [
+      {
+        status: "Belum Dikunjungi",
+        timestamp: "14 Juni 2026 11:20",
+        note: "Aduan mandiri diajukan oleh masyarakat via portal lapor.",
+        updatedBy: "Warga Mandiri"
+      }
+    ]
+  },
+  {
+    id: "SLRT-2026-0004",
+    namaFasilitator: "Halimah",
+    kelurahan: "Sirantau",
+    kecamatan: "Datuk Bandar",
+    hariTanggal: "10 Juni 2026",
+    namaKlien: "Nursiah",
+    nik: "1274015609550004",
+    pekerjaanKrt: "Tidak Bekerja (Lansia Mandiri)",
+    namaKuasa: "Hasan (Anak Kandung)",
+    alamatKlien: "Jl. DI Panjaitan Gg. Mulia No. 4, Kel. Sirantau",
+    noTelpon: "087755331122",
+    dokumen: "Lengkap (KTP, KK, SKTM)",
+    status: "Sangat Miskin",
+    bantuanDiterima: "Pernah BLT Lansia (Tahun Lalu)",
+    statusRumah: "Menumpang Keluarga",
+    jenisPenerangan: "PLN Bersubsidi 450W",
+    mck: "Menumpang Tetangga",
+    pendapatanPerbulan: "400.000",
+    jenisPengaduan: "Permohonan jaminan kesehatan kesehatan gratis untuk lansia stroke dan bantuan pangan sembako.",
+    jenisLayanan: "Sembako / BPNT (Bantuan Pangan Non Tunai)",
+    isHighPriority: true,
+    statusKunjungan: "Sudah Dikunjungi",
+    tanggalPemeriksaan: "14 Juni 2026",
+    catatanPemeriksa: "Klien nursiah saat dikunjungi dalam keadaan berbaring sakit stroke menahun. Sangat layak diprioritaskan mendapat PKH Lansia dan KIS PBI APBD Kota.",
+    diinputOleh: "Admin",
+    namaPendata: "Halimah",
+    bantuanDiterimaList: ["BLT (Bantuan Direct Tunai)"],
+    indikatorSosialEkonomi: ["Pendapatan di bawah UMR / tidak menentu", "Kepala Keluarga janda / lansia / disabilitas", "Tidak memiliki jaminan kesehatan mandiri"],
+    kelayakanHuni: ["Status tinggal menyewa / sewa bulanan / menumpang keluarga", "MCK menumpang / umum / tidak layak"],
+    latitude: 2.9495,
+    longitude: 99.7925,
+    statusHistory: [
+      {
+        status: "Belum Dikunjungi",
+        timestamp: "10 Juni 2026 10:00",
+        note: "Data aduan masuk divalidasi.",
+        updatedBy: "Admin Dinsos"
+      },
+      {
+        status: "Sudah Dikunjungi",
+        timestamp: "14 Juni 2026 15:45",
+        note: "Selesai ditinjau lansung di lapangan oleh fasilitator Halimah.",
+        updatedBy: "Fasilitator Halimah"
+      }
+    ]
+  }
+];
 
 export interface FacilitatorUser {
   id: string;
@@ -118,7 +280,44 @@ export interface FacilitatorUser {
   createdAt: string;
 }
 
-export const INITIAL_FACILITATORS: FacilitatorUser[] = [];
+export const INITIAL_FACILITATORS: FacilitatorUser[] = [
+  {
+    id: "FAS-001",
+    name: "Halimah",
+    nik: "1274012204910002",
+    regionKecamatan: "Datuk Bandar",
+    regionKelurahan: "Pahang",
+    phone: "081234567890",
+    email: "halimah@example.com",
+    password: "facilitator123",
+    status: "APPROVED",
+    createdAt: "2026-06-01T08:00:00Z"
+  },
+  {
+    id: "FAS-002",
+    name: "Budi Santoso",
+    nik: "1274021508880003",
+    regionKecamatan: "Tanjungbalai Selatan",
+    regionKelurahan: "Karya",
+    phone: "081298765432",
+    email: "budi@example.com",
+    password: "facilitator123",
+    status: "APPROVED",
+    createdAt: "2026-06-01T08:30:00Z"
+  },
+  {
+    id: "FAS-003",
+    name: "Siti Rahma",
+    nik: "1274031110930004",
+    regionKecamatan: "Sei Tualang Raso",
+    regionKelurahan: "Pasar Baru",
+    phone: "081345678120",
+    email: "siti@example.com",
+    password: "facilitator123",
+    status: "APPROVED",
+    createdAt: "2026-06-02T09:00:00Z"
+  }
+];
 
 export const getSafeBase64Url = (srcUrl: string | undefined): string => {
   if (!srcUrl) return '';
