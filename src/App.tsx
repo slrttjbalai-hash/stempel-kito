@@ -2477,6 +2477,48 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     }
   };
 
+  // Administrator action: Mark a record as needing re-verification (Verifikasi Ulang)
+  const handleMarkReverification = (rec: SLRTRecord, note: string) => {
+    const activeBy = session?.name || 'Admin';
+    const today = new Date();
+    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const months = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    const hrs = String(today.getHours()).padStart(2, '0');
+    const mins = String(today.getMinutes()).padStart(2, '0');
+    const secs = String(today.getSeconds()).padStart(2, '0');
+    const formattedDateTime = `${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()} Pukul ${hrs}:${mins}:${secs} WIB`;
+
+    const updatedRecords = records.map(r => {
+      if (r.id === rec.id) {
+        const history = r.statusHistory ? [...r.statusHistory] : [];
+        history.push({
+          status: 'Perlu Verifikasi Ulang',
+          timestamp: formattedDateTime,
+          note: note,
+          updatedBy: activeBy
+        });
+
+        const updated = normalizeRecord({
+          ...r,
+          statusKunjungan: 'Perlu Verifikasi Ulang',
+          statusHistory: history,
+          diinputOleh: r.diinputOleh || 'Admin'
+        });
+
+        // Trigger save and sync immediately
+        saveRecordOverride(updated);
+        handleSyncToGoogleSheets(updated, true);
+        return updated;
+      }
+      return r;
+    });
+
+    setRecords(updatedRecords);
+  };
+
   // Citizen direct report submit handler (Pelaporan Mandiri Warga)
   const handleWargaSubmitReport = (e: React.FormEvent) => {
     e.preventDefault();
@@ -5018,9 +5060,11 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                               <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase border ${
                                 rec.statusKunjungan === 'Sudah Dikunjungi' 
                                   ? 'bg-emerald-100 text-emerald-800 border-emerald-250' 
-                                  : 'bg-amber-100 text-amber-850 border-amber-250 animate-pulse'
+                                  : rec.statusKunjungan === 'Perlu Verifikasi Ulang'
+                                    ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
+                                    : 'bg-indigo-100 text-indigo-850 border-indigo-250 animate-pulse'
                               }`}>
-                                {rec.statusKunjungan === 'Sudah Dikunjungi' ? 'Selesai Diaudit ✓' : 'Mengantre Survei'}
+                                {rec.statusKunjungan === 'Sudah Dikunjungi' ? 'Selesai Diaudit ✓' : rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? 'Perlu Verifikasi Ulang 🔄' : 'Mengantre Survei'}
                               </span>
                             </div>
 
@@ -5069,20 +5113,42 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                               {/* STEP 3: INSPECTION AND VERIFICATION */}
                               <div className="relative">
                                 <div className={`absolute -left-[37px] top-0.5 w-4.5 h-4.5 rounded-full border-4 border-white flex items-center justify-center shadow-xs ${
-                                  isVisited ? 'bg-emerald-600' : 'bg-amber-500 animate-pulse'
+                                  isVisited ? 'bg-emerald-600' : rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? 'bg-amber-600' : 'bg-amber-500 animate-pulse'
                                 }`}></div>
                                 
                                 <div>
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <h5 className="text-xs font-black text-slate-850 uppercase tracking-wide">3. Kunjungan Lapangan &amp; Verifikasi</h5>
                                     <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                                      isVisited ? 'bg-emerald-500 text-white font-mono' : 'bg-amber-500 text-white font-mono'
+                                      isVisited ? 'bg-emerald-500 text-white font-mono' : rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? 'bg-amber-600 text-white font-mono animate-pulse' : 'bg-amber-500 text-white font-mono'
                                     }`}>
-                                      {isVisited ? 'Sudah Dikunjungi (Verified)' : 'Dalam Antrean Survei'}
+                                      {isVisited ? 'Sudah Dikunjungi (Verified)' : rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? 'Verifikasi Ulang Lapangan' : 'Dalam Antrean Survei'}
                                     </span>
                                   </div>
 
-                                  {!isVisited ? (
+                                  {!isVisited && rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? (
+                                    <div className="mt-2.5 bg-amber-50/70 border border-amber-200 p-3.5 rounded-xl">
+                                      <p className="text-[11px] text-amber-900 leading-relaxed font-semibold">
+                                        🔄 Berkas / dokumentasi kunjungan sebelumnya ditandai oleh <b>Admin Dinsos</b> kurang lengkap atau salah.
+                                      </p>
+                                      {(() => {
+                                        const latestReverify = [...(rec.statusHistory || [])]
+                                          .reverse()
+                                          .find(h => h.status === 'Perlu Verifikasi Ulang');
+                                        if (latestReverify) {
+                                          return (
+                                            <p className="text-[10px] text-rose-700 mt-1 leading-relaxed font-bold italic">
+                                              Instruksi Perbaikan Admin: "{latestReverify.note}"
+                                            </p>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
+                                      <p className="text-[10px] text-slate-450 mt-1.5 leading-relaxed">
+                                        Fasilitator pendamping <b>{rec.namaFasilitator}</b> akan segera menghubungi Anda kembali untuk memperbaiki data/foto lapangan.
+                                      </p>
+                                    </div>
+                                  ) : !isVisited ? (
                                     <div className="mt-2.5 bg-amber-50/70 border border-amber-200 p-3.5 rounded-xl">
                                       <p className="text-[11px] text-amber-900 leading-relaxed font-semibold">
                                         🕒 Fasilitator SLRT <b>{rec.namaFasilitator}</b> segera berkunjung ke domisili rumahtangga Anda untuk verifikasi 18 indikator kelayakan.
@@ -5611,6 +5677,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                     <option value="">Status Kunjungan (Semua)</option>
                     <option value="Belum Dikunjungi">🕒 Belum Dikunjungi (Pending)</option>
                     <option value="Sudah Dikunjungi">✅ Sudah Dikunjungi (Verified)</option>
+                    <option value="Perlu Verifikasi Ulang">🔄 Perlu Verifikasi Ulang</option>
                   </select>
                 </div>
 
@@ -5928,12 +5995,14 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                               <span className={`text-[7.5px] font-black px-1.5 py-0.5 rounded-full uppercase border tracking-wide whitespace-nowrap shrink-0 flex items-center gap-1 ${
                                 rec.statusKunjungan === 'Sudah Dikunjungi'
                                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                                  : rec.statusKunjungan === 'Perlu Verifikasi Ulang'
+                                    ? 'bg-amber-100 text-amber-900 border-amber-250 animate-pulse'
+                                    : 'bg-indigo-50 text-indigo-800 border-indigo-200'
                               }`}>
                                 <span className={`w-1 h-1 rounded-full ${
-                                  rec.statusKunjungan === 'Sudah Dikunjungi' ? 'bg-emerald-600' : 'bg-amber-500 animate-pulse'
+                                  rec.statusKunjungan === 'Sudah Dikunjungi' ? 'bg-emerald-600' : rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? 'bg-amber-600' : 'bg-indigo-500 animate-pulse'
                                 }`}></span>
-                                {rec.statusKunjungan === 'Sudah Dikunjungi' ? 'Sudah Dikunjungi' : 'Belum Dikunjungi'}
+                                {rec.statusKunjungan === 'Sudah Dikunjungi' ? 'Sudah Dikunjungi' : rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? 'Verifikasi Ulang' : 'Belum Dikunjungi'}
                               </span>
                               
                               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -6200,6 +6269,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                   onVerifyVisit={handleOpenVerifierModal}
                   onSyncSheets={handleSyncToGoogleSheets}
                   isSyncingSheets={syncingRecordId === selectedRecord.id}
+                  onMarkReverification={handleMarkReverification}
                 />
               ) : (
                 <div className="bg-white rounded-2xl border border-slate-150 p-12 text-center text-slate-450 flex flex-col items-center justify-center gap-3 shadow-xs">

@@ -1,6 +1,6 @@
 import React from 'react';
 import { SLRTRecord, getSafeBase64Url } from '../types';
-import { Printer, Calendar, FileText, Clipboard, Check, HelpCircle, ShieldCheck, HeartPulse, Camera, Clock, CheckCircle2, UserCheck, Download, Home } from 'lucide-react';
+import { Printer, Calendar, FileText, Clipboard, Check, HelpCircle, ShieldCheck, HeartPulse, Camera, Clock, CheckCircle2, UserCheck, Download, Home, RefreshCw } from 'lucide-react';
 
 interface BentoRecordDetailsProps {
   rec: SLRTRecord;
@@ -13,6 +13,7 @@ interface BentoRecordDetailsProps {
   onVerifyVisit?: (rec: SLRTRecord) => void;
   onSyncSheets?: (rec: SLRTRecord) => void;
   isSyncingSheets?: boolean;
+  onMarkReverification?: (rec: SLRTRecord, note: string) => void;
 }
 
 export default function BentoRecordDetails({
@@ -25,8 +26,10 @@ export default function BentoRecordDetails({
   userRole = 'admin',
   onVerifyVisit,
   onSyncSheets,
-  isSyncingSheets = false
+  isSyncingSheets = false,
+  onMarkReverification
 }: BentoRecordDetailsProps) {
+  const [reverifyNote, setReverifyNote] = React.useState('');
   
   // Custom helper for status coloring
   const getStatusStyle = (status: string | undefined) => {
@@ -158,16 +161,23 @@ export default function BentoRecordDetails({
               <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg uppercase tracking-wider inline-flex items-center gap-1.5 self-start sm:self-center ${
                 rec.statusKunjungan === 'Sudah Dikunjungi' 
                   ? 'bg-emerald-100 text-emerald-800 border border-emerald-200/50' 
-                  : 'bg-amber-100 text-amber-800 border border-amber-200/50'
+                  : rec.statusKunjungan === 'Perlu Verifikasi Ulang'
+                    ? 'bg-amber-100 text-amber-900 border border-amber-250 animate-pulse'
+                    : 'bg-indigo-100 text-indigo-800 border border-indigo-200/50'
               }`}>
                 {rec.statusKunjungan === 'Sudah Dikunjungi' ? (
                   <>
                     <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                     SUDAH DIKUNJUNGKUNJUNGI (VERIFIED)
                   </>
+                ) : rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? (
+                  <>
+                    <RefreshCw className="w-3 h-3 text-amber-700 animate-spin" style={{ animationDuration: '3s' }} />
+                    PERLU VERIFIKASI ULANG (INCOMPLETE)
+                  </>
                 ) : (
                   <>
-                    <Clock className="w-3 h-3 text-amber-650 animate-pulse" />
+                    <Clock className="w-3 h-3 text-indigo-600 animate-pulse" />
                     Belum Dikunjungi (Pending)
                   </>
                 )}
@@ -180,11 +190,11 @@ export default function BentoRecordDetails({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-700 font-medium">
                 <div className="flex items-center gap-2">
                   <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
-                    rec.statusKunjungan === 'Sudah Dikunjungi' ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'
+                    rec.statusKunjungan === 'Sudah Dikunjungi' ? 'bg-emerald-500 text-white' : rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? 'bg-amber-550 text-white' : 'bg-slate-200 text-slate-500'
                   }`}>
-                    {rec.statusKunjungan === 'Sudah Dikunjungi' ? '✓' : '•'}
+                    {rec.statusKunjungan === 'Sudah Dikunjungi' ? '✓' : rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? '🔄' : '•'}
                   </div>
-                  <span>Status Kunjungan: <b className={rec.statusKunjungan === 'Sudah Dikunjungi' ? "text-emerald-700" : "text-amber-700 font-bold"}>{rec.statusKunjungan || 'Belum Dikunjungi'}</b></span>
+                  <span>Status Kunjungan: <b className={rec.statusKunjungan === 'Sudah Dikunjungi' ? "text-emerald-700" : rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? "text-amber-750 font-black" : "text-indigo-700 font-bold"}>{rec.statusKunjungan || 'Belum Dikunjungi'}</b></span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
@@ -250,11 +260,77 @@ export default function BentoRecordDetails({
                        * Posisi absolut rumah warga yang direkam melalui GPS kamera handphone Fasilitator saat audit lapangan dilangsungkan. Hal ini memudahkan pelacakan fisik nyata meskipun berbeda dari domisili KK.
                      </p>
                    </div>
+
+                   {/* Admin action: Request Re-verification */}
+                   {userRole === 'admin' && onMarkReverification && (
+                     <div className="mt-4 p-4 bg-amber-50/60 border border-amber-205 rounded-xl flex flex-col gap-3">
+                       <div>
+                         <p className="text-[10px] font-black text-amber-850 uppercase tracking-wider flex items-center gap-1">
+                           <RefreshCw className="w-3.5 h-3.5 text-amber-700 animate-pulse" /> TANDAI PERLU VERIFIKASI ULANG (ADMIN)
+                         </p>
+                         <p className="text-[11px] text-slate-600 mt-0.5 font-medium">
+                           Jika hasil verifikasi lapangan atau foto dokumentasi dari fasilitator tidak lengkap/salah, berikan catatan instruksi verifikasi ulang di bawah ini.
+                         </p>
+                       </div>
+                       
+                       <div className="flex flex-col gap-2">
+                         <textarea
+                           placeholder="Tulis alasan verifikasi ulang (contoh: Foto depan rumah buram / KK kurang jelas / data MCK tidak sinkron)..."
+                           value={reverifyNote}
+                           onChange={(e) => setReverifyNote(e.target.value)}
+                           className="w-full bg-white border border-slate-205 text-xs p-2.5 rounded-lg outline-none focus:border-indigo-500 text-slate-800"
+                           rows={2}
+                         />
+                         <button
+                           type="button"
+                           onClick={() => {
+                             if (!reverifyNote.trim()) {
+                               alert('Silakan isi alasan/catatan mengapa perlu dilakukan verifikasi ulang!');
+                               return;
+                             }
+                             onMarkReverification(rec, reverifyNote.trim());
+                             setReverifyNote('');
+                           }}
+                           className="self-end px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-[10px] uppercase tracking-wider transition-all cursor-pointer shadow-sm shadow-amber-100"
+                         >
+                           Kirim Permintaan Verifikasi Ulang
+                         </button>
+                       </div>
+                     </div>
+                   )}
+                 </div>
+               ) : rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? (
+                 <div className="py-2 flex flex-col gap-3">
+                   <p className="text-slate-655 text-xs leading-relaxed">
+                     Klien ini ditandai oleh <strong className="text-amber-800">Admin Dinsos</strong> untuk <strong className="text-amber-900">Verifikasi Ulang Lapangan</strong> karena data atau foto hasil survei fasilitator sebelumnya kurang lengkap.
+                   </p>
+                   
+                   {/* Display latest re-verification reason from history */}
+                   {(() => {
+                     const latestReverify = [...(rec.statusHistory || [])]
+                       .reverse()
+                       .find(h => h.status === 'Perlu Verifikasi Ulang');
+                     if (latestReverify) {
+                       return (
+                         <div className="p-3 bg-amber-50/70 border border-amber-150 rounded-xl">
+                           <p className="text-[10px] font-black text-amber-800 uppercase tracking-wider mb-1">Catatan Instruksi dari Admin:</p>
+                           <p className="text-slate-700 text-xs italic leading-relaxed font-semibold">
+                             "{latestReverify.note}"
+                           </p>
+                         </div>
+                       );
+                     }
+                     return null;
+                   })()}
+
+                   <p className="text-slate-455 text-[11px] italic leading-normal border-t border-slate-100 pt-2 mt-1">
+                     Fasilitator pendata harus mengunjungi kembali alamat warga, mengambil ulang foto dokumen/rumah yang kurang lengkap, memperbaiki data kualifikasi, dan mengirimkan kembali hasil verifikasi perbaikan.
+                   </p>
                  </div>
                ) : (
                  <div className="py-2">
                    <p className="text-slate-655 text-xs leading-relaxed">
-                     Klien ini dideklarasikan oleh <strong className="text-slate-800">{rec.diinputOleh === 'Warga' ? 'Keluarga Warga' : 'Admin Dinsos'}</strong> dan memiliki status <strong className="text-amber-800 leading-none">Belum Dikunjungi Lapangan</strong>.
+                     Klien ini dideklarasikan oleh <strong className="text-slate-800">{rec.diinputOleh === 'Warga' ? 'Keluarga Warga' : 'Admin Dinsos'}</strong> dan memiliki status <strong className="text-indigo-800 leading-none">Belum Dikunjungi Lapangan</strong>.
                    </p>
                    <p className="text-slate-455 text-[11px] mt-1 italic leading-normal">
                      Fasilitator pendata harus melakukan verifikasi kependudukan langsung ke alamat rumah klien untuk membuktikan kondisi 18 instrumen kualifikasi kemiskinan dan melampirkan dokumentasi KK/KTP serta Foto Depan Rumah.
@@ -271,14 +347,14 @@ export default function BentoRecordDetails({
                  onClick={() => onVerifyVisit(rec)}
                  className="w-full sm:w-auto py-2.5 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-display cursor-pointer animate-pulse"
                >
-                 <Camera className="w-4 h-4" /> Mulai Verifikasi &amp; Ambil Gambar KK/KTP &amp; Rumah
+                 <Camera className="w-4 h-4" /> {rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? 'Mulai Verifikasi Ulang & Perbaiki Berkas' : 'Mulai Verifikasi & Ambil Gambar KK/KTP & Rumah'}
                </button>
              </div>
            )}
            
            {rec.statusKunjungan !== 'Sudah Dikunjungi' && userRole !== 'facilitator' && (
              <div className="mt-4 p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[10px] text-slate-500 italic block">
-               💡 <strong>Tips Peran:</strong> Masuk sebagai peran <strong>Fasilitator</strong> untuk melakukan kunjungan rumah, mengunggah foto bukti, dan menyelesaikan verifikasi lapangan klien ini.
+               💡 <strong>Tips Peran:</strong> Masuk sebagai peran <strong>Fasilitator</strong> untuk {rec.statusKunjungan === 'Perlu Verifikasi Ulang' ? 'melakukan verifikasi ulang kependudukan, mengedit data kualifikasi,' : 'melakukan kunjungan rumah, mengunggah foto bukti,'} dan menyelesaikan verifikasi lapangan klien ini.
              </div>
            )}
          </div>

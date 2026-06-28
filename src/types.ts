@@ -22,7 +22,7 @@ export interface SLRTRecord {
   isDeleted?: boolean | string; // Flag to check if record is deleted
   
   // Multi-user & flow states
-  statusKunjungan?: 'Belum Dikunjungi' | 'Sudah Dikunjungi' | 'Dihapus' | 'DELETED';
+  statusKunjungan?: 'Belum Dikunjungi' | 'Sudah Dikunjungi' | 'Perlu Verifikasi Ulang' | 'Dihapus' | 'DELETED';
   tanggalPemeriksaan?: string; // Tanggal verifikasi lapangan oleh fasilitator
   dokumentasiBukti?: string; // Data URL atau string referensi bukti gambar kontrol kependudukan
   catatanPemeriksa?: string; // Catatan tambahan hasil verifikasi lapangan
