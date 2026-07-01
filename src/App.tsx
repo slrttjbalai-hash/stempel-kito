@@ -197,13 +197,39 @@ function stripPhotosFromRecordList(list: any[]): any[] {
   return list.map(stripPhotosFromRecord);
 }
 
+// Helper to safely write to localStorage, catching QuotaExceededError and triggering an event
+export function safeLocalStorageSetItem(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e: any) {
+    console.error(`Gagal menyimpan ke localStorage [Key: ${key}]:`, e);
+    const isQuotaExceeded = 
+      e.name === 'QuotaExceededError' ||
+      e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      e.code === 22 ||
+      e.code === 1014 ||
+      (e.message && (
+        e.message.toLowerCase().includes('quota') ||
+        e.message.toLowerCase().includes('exceeded') ||
+        e.message.toLowerCase().includes('full') ||
+        e.message.toLowerCase().includes('limit')
+      ));
+    
+    if (isQuotaExceeded) {
+      window.dispatchEvent(new CustomEvent('slrt_storage_full', { detail: { key } }));
+    }
+    return false;
+  }
+}
+
 // Helper to save a record to local overrides
 function saveRecordOverride(rec: SLRTRecord) {
   try {
     const saved = localStorage.getItem('slrt_record_overrides') || '{}';
     const overrides = JSON.parse(saved);
     overrides[rec.id] = stripPhotosFromRecord(rec);
-    localStorage.setItem('slrt_record_overrides', JSON.stringify(overrides));
+    safeLocalStorageSetItem('slrt_record_overrides', JSON.stringify(overrides));
   } catch (e) {
     console.error("Gagal menyimpan override rekaman lokal:", e);
   }
@@ -222,7 +248,7 @@ function deleteRecordOverride(id: string) {
     Object.keys(overrides).forEach(key => {
       cleaned[key] = stripPhotosFromRecord(overrides[key]);
     });
-    localStorage.setItem('slrt_record_overrides', JSON.stringify(cleaned));
+    safeLocalStorageSetItem('slrt_record_overrides', JSON.stringify(cleaned));
   } catch (e) {
     console.error("Gagal menghapus override rekaman lokal:", e);
   }
@@ -714,6 +740,19 @@ export default function App() {
     return mergeRecordsWithOverrides(loaded.map(normalizeRecord));
   });
 
+  // State to track if browser storage quota is exceeded
+  const [isStorageExceeded, setIsStorageExceeded] = useState(false);
+
+  useEffect(() => {
+    const handleStorageFull = () => {
+      setIsStorageExceeded(true);
+    };
+    window.addEventListener('slrt_storage_full', handleStorageFull);
+    return () => {
+      window.removeEventListener('slrt_storage_full', handleStorageFull);
+    };
+  }, []);
+
   // User Authentication & Role Perspective
   const [userRole, setUserRole] = useState<'admin' | 'facilitator' | 'warga'>(() => {
     const saved = localStorage.getItem('slrt_user_role');
@@ -903,13 +942,13 @@ export default function App() {
           }).map(normalizeRecord);
           
           setRecords(normalized);
-          localStorage.setItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(normalized)));
+          safeLocalStorageSetItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(normalized)));
         }
         
         if (json.facilitators && Array.isArray(json.facilitators)) {
           const reconciled = getReconciledFacilitators(json.facilitators);
           setFacilitators(reconciled);
-          localStorage.setItem('slrt_facilitators', JSON.stringify(reconciled));
+          safeLocalStorageSetItem('slrt_facilitators', JSON.stringify(reconciled));
         }
         
         const now = new Date();
@@ -984,7 +1023,7 @@ export default function App() {
                 Object.keys(overrides).forEach(k => {
                   cleanedOver[k] = stripPhotosFromRecord(overrides[k]);
                 });
-                localStorage.setItem('slrt_record_overrides', JSON.stringify(cleanedOver));
+                safeLocalStorageSetItem('slrt_record_overrides', JSON.stringify(cleanedOver));
               }
             } catch (pruneErr) {
               console.error("Gagal melakukan pemangkasan override:", pruneErr);
@@ -1003,7 +1042,7 @@ export default function App() {
 
           const merged = mergeRecordsWithOverrides(recordsToMerge);
           setRecords(merged);
-          localStorage.setItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(merged)));
+          safeLocalStorageSetItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(merged)));
         }
         if (json.facilitators && Array.isArray(json.facilitators)) {
           let facsToProcess = [...json.facilitators];
@@ -1016,7 +1055,7 @@ export default function App() {
 
           const reconciled = getReconciledFacilitators(facsToProcess);
           setFacilitators(reconciled);
-          localStorage.setItem('slrt_facilitators', JSON.stringify(reconciled));
+          safeLocalStorageSetItem('slrt_facilitators', JSON.stringify(reconciled));
         }
         const now = new Date();
         setLastCloudSync(now.toLocaleTimeString('id-ID'));
@@ -1090,12 +1129,12 @@ export default function App() {
 
   // Save facilitators and session
   useEffect(() => {
-    localStorage.setItem('slrt_facilitators', JSON.stringify(facilitators));
+    safeLocalStorageSetItem('slrt_facilitators', JSON.stringify(facilitators));
   }, [facilitators]);
 
   useEffect(() => {
     if (session) {
-      localStorage.setItem('slrt_session', JSON.stringify(session));
+      safeLocalStorageSetItem('slrt_session', JSON.stringify(session));
     } else {
       localStorage.removeItem('slrt_session');
     }
@@ -1129,7 +1168,7 @@ export default function App() {
 
   const changePhotoResolutionMode = (mode: 'standard' | 'high') => {
     setPhotoResolutionMode(mode);
-    localStorage.setItem('slrt_photo_resolution_mode', mode);
+    safeLocalStorageSetItem('slrt_photo_resolution_mode', mode);
   };
 
   const memoizedVerifierFotoKkKtp = useMemo(() => {
@@ -1298,11 +1337,11 @@ export default function App() {
 
   // Auto-save changes to localStorage (strip photos to keep size ultra micro and prevent QuotaExceededError)
   useEffect(() => {
-    localStorage.setItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(records)));
+    safeLocalStorageSetItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(records)));
   }, [records]);
 
   useEffect(() => {
-    localStorage.setItem('slrt_user_role', userRole);
+    safeLocalStorageSetItem('slrt_user_role', userRole);
   }, [userRole]);
 
   // Adjust kelurahan list automatically when form kecamatan changes
@@ -1391,7 +1430,7 @@ export default function App() {
           const reconciled = getReconciledFacilitators(facsToProcess);
           currentFacs = reconciled;
           setFacilitators(reconciled);
-          localStorage.setItem('slrt_facilitators', JSON.stringify(reconciled));
+          safeLocalStorageSetItem('slrt_facilitators', JSON.stringify(reconciled));
         }
         if (json.records && Array.isArray(json.records)) {
           const deletedIdsString = localStorage.getItem('slrt_deleted_record_ids') || '[]';
@@ -1419,7 +1458,7 @@ export default function App() {
 
           const merged = mergeRecordsWithOverrides(recordsToMerge);
           setRecords(merged);
-          localStorage.setItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(merged)));
+          safeLocalStorageSetItem('slrt_records', JSON.stringify(stripPhotosFromRecordList(merged)));
         }
         const now = new Date();
         setLastCloudSync(now.toLocaleTimeString('id-ID'));
@@ -1503,7 +1542,7 @@ export default function App() {
           const reconciled = getReconciledFacilitators(json.facilitators);
           currentFacs = reconciled;
           setFacilitators(reconciled);
-          localStorage.setItem('slrt_facilitators', JSON.stringify(reconciled));
+          safeLocalStorageSetItem('slrt_facilitators', JSON.stringify(reconciled));
         }
       }
     } catch (err) {
@@ -1595,7 +1634,7 @@ export default function App() {
       const savedOverrides = localStorage.getItem('slrt_status_overrides');
       const overrides = savedOverrides ? JSON.parse(savedOverrides) : {};
       overrides[id] = newStatus;
-      localStorage.setItem('slrt_status_overrides', JSON.stringify(overrides));
+      safeLocalStorageSetItem('slrt_status_overrides', JSON.stringify(overrides));
     } catch (e) {
       console.error("Gagal menyimpan override status lokal:", e);
     }
@@ -1637,7 +1676,7 @@ export default function App() {
       const deletedFasIds = JSON.parse(deletedFasString);
       if (!deletedFasIds.includes(id)) {
         deletedFasIds.push(id);
-        localStorage.setItem('slrt_deleted_facilitator_ids', JSON.stringify(deletedFasIds));
+        safeLocalStorageSetItem('slrt_deleted_facilitator_ids', JSON.stringify(deletedFasIds));
       }
     } catch (e) {
       console.error("Gagal menyimpan ID fasilitator terhapus:", e);
@@ -1649,7 +1688,7 @@ export default function App() {
       if (savedOverrides) {
         const overrides = JSON.parse(savedOverrides);
         delete overrides[id];
-        localStorage.setItem('slrt_status_overrides', JSON.stringify(overrides));
+        safeLocalStorageSetItem('slrt_status_overrides', JSON.stringify(overrides));
       }
     } catch (e) {
       console.error("Gagal menghapus override status lokal:", e);
@@ -2677,7 +2716,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       const deletedIds = JSON.parse(deletedIdsString);
       if (!deletedIds.includes(id)) {
         deletedIds.push(id);
-        localStorage.setItem('slrt_deleted_record_ids', JSON.stringify(deletedIds));
+        safeLocalStorageSetItem('slrt_deleted_record_ids', JSON.stringify(deletedIds));
       }
     } catch (e) {
       console.error("Error storing deleted record ID:", e);
@@ -3366,7 +3405,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       localStorage.removeItem('slrt_record_overrides');
       setRecords(INITIAL_RECORDS);
       setSelectedRecordId(null);
-      localStorage.setItem('slrt_records', JSON.stringify(INITIAL_RECORDS));
+      safeLocalStorageSetItem('slrt_records', JSON.stringify(INITIAL_RECORDS));
     }
   };
 
@@ -4355,6 +4394,24 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans select-none antialiased">
       
+      {isStorageExceeded && (
+        <div className="bg-gradient-to-r from-amber-600 to-amber-500 text-white px-6 py-3.5 flex items-center justify-between gap-4 font-sans border-b border-amber-700 shadow-md animate-pulse z-50">
+          <div className="flex items-center gap-3">
+            <span className="text-xl">⚠️</span>
+            <div className="text-xs md:text-sm font-bold">
+              Penyimpanan Browser Penuh (Kuota Habis)! Data Anda <span className="underline">tetap aman disimpan di memori aktif sistem ini</span>. 
+              <span className="block md:inline md:ml-1 text-amber-50 font-medium">JANGAN MENUTUP atau ME-REFRESH halaman browser ini agar data baru Anda tidak hilang sampai Anda mengirimkannya atau membersihkan ruang disk.</span>
+            </div>
+          </div>
+          <button 
+            onClick={() => setIsStorageExceeded(false)}
+            className="bg-white/20 hover:bg-white/30 text-white font-extrabold px-3 py-1 rounded-lg text-xs transition-all uppercase tracking-wider cursor-pointer whitespace-nowrap"
+          >
+            Paham
+          </button>
+        </div>
+      )}
+
       {/* 1. HEADER RE-DESIGNED TO BENTO SPEC */}
       <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 md:px-8 shrink-0 shadow-xs z-10 font-sans">
         <div className="flex items-center gap-3">
