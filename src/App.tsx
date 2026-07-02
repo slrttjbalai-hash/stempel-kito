@@ -3656,7 +3656,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
             .signatures-container {
               display: flex;
-              justify-content: space-between;
+              justify-content: flex-end;
               margin-top: 40px;
               page-break-inside: avoid;
             }
@@ -3867,6 +3867,11 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 <td class="separator">:</td>
                 <td class="value">${selectedRecord.statusKunjungan || 'Belum Dikunjungi'}</td>
               </tr>
+              <tr>
+                <td class="label">Nama Fasilitator</td>
+                <td class="separator">:</td>
+                <td class="value">${selectedRecord.namaPendata || selectedRecord.namaFasilitator || 'Belum Diverifikasi'}</td>
+              </tr>
             </table>
             <table class="info-table">
               <tr>
@@ -3918,16 +3923,11 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
           <div class="signatures-container">
             <div class="sig-box">
-              <p>Petugas Fasilitator Pendata,</p>
-              <p>Dinas Sosial Tanjungbalai</p>
+              <p>Tanjungbalai, ${(selectedRecord.tanggalPemeriksaan || selectedRecord.hariTanggal || '').split(',')[1]?.trim() || '_________________'}</p>
+              <p>STEMPEL KITO</p>
+              <p>Dinas Sosial Kota Tanjungbalai</p>
               <div class="sig-space"></div>
-              <div class="sig-name">${selectedRecord.namaFasilitator}</div>
-            </div>
-            <div class="sig-box">
-              <p>Tanjungbalai, ${selectedRecord.hariTanggal.split(',')[1] || '_________________'}</p>
-              <p>Klien / Penerima Layanan</p>
-              <div class="sig-space"></div>
-              <div class="sig-name">${selectedRecord.namaKlien}</div>
+              <div class="sig-name">${selectedRecord.namaPendata || selectedRecord.namaFasilitator || 'Petugas STEMPEL KITO'}</div>
             </div>
           </div>
           
@@ -4234,6 +4234,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     // SECTION IV
     drawSectionHeader('IV. STATUS VERIFIKASI FISIK & LAPANGAN (AUDIT)');
     drawRow('Status Kunjungan', rec.statusKunjungan || 'Belum Dikunjungi', 'Tanggal Pemeriksaan', rec.tanggalPemeriksaan || 'Belum Diperiksa');
+    drawRow('Nama Fasilitator', rec.namaPendata || rec.namaFasilitator || 'Belum Diverifikasi');
     drawRowFullWidth('Catatan Pengawas', rec.catatanPemeriksa || 'Belum ada catatan verifikasi fisik lapangan dari petugas terkait.');
 
     // SECTION V
@@ -4355,19 +4356,23 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     currentY = boxY + boxHeight + 11;
 
     // Put signatures in a safe place
-    currentY = ensureSpace(30);
+    currentY = ensureSpace(35);
     const sigY = currentY + 4;
 
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(30, 41, 59);
 
-    doc.text('Petugas Fasilitator Pendata,', 25, sigY);
-    doc.text('Dinas Sosial Tanjungbalai', 25, sigY + 4);
+    // Right Signature: STEMPEL KITO Dinas Sosial Kota Tanjungbalai
+    const datePart = (rec.tanggalPemeriksaan || rec.hariTanggal || '').split(',')[1]?.trim() || '_________________';
+    doc.text(`Tanjungbalai, ${datePart}`, 135, sigY);
+    doc.text('STEMPEL KITO', 135, sigY + 4);
+    doc.text('Dinas Sosial Kota Tanjungbalai', 135, sigY + 8);
     doc.setFont('Helvetica', 'normal');
-    doc.text('_____________________________', 25, sigY + 20);
+    doc.text('_____________________________', 135, sigY + 24);
     doc.setFont('Helvetica', 'bold');
-    doc.text(`( ${rec.namaFasilitator} )`, 25, sigY + 24);
+    const visitingFacName = rec.namaPendata || rec.namaFasilitator || 'Petugas STEMPEL KITO';
+    doc.text(`( ${visitingFacName} )`, 135, sigY + 28);
 
     // DRAW FOOTERS DYNAMICALLY ON EVERY PAGE
     const drawPageFooter = (pageNum: number, totalPages: number) => {
