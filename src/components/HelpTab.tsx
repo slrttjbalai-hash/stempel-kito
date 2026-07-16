@@ -455,7 +455,27 @@ function filterAndExportIntegrated() {
   ui.alert("✅ Sukses!\\nBerhasil menyusun " + filteredValues.length + " data ke dalam sheet baru bernama '" + newSheetName + "'!");
 }
 
-// Fungsi Otomatisasi Layout Data Laporan
+// Fungsi Format untuk Satu Baris (Sangat Cepat - untuk Operasi Sinkronisasi)
+function styleSingleRow(sheet, rowNum, lastCol) {
+  if (rowNum <= 1) return;
+  const range = sheet.getRange(rowNum, 1, 1, lastCol);
+  range.setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+  range.setVerticalAlignment("middle");
+  sheet.setRowHeight(rowNum, 24);
+  
+  const zebraBg = (rowNum % 2 === 0) ? "#f8fafc" : "#ffffff";
+  range.setBackground(zebraBg);
+  
+  const statusCell = sheet.getRange(rowNum, 19);
+  const statusVal = statusCell.getValue();
+  if (statusVal === "Sudah Dikunjungi" || statusVal === "Terverifikasi") {
+    statusCell.setBackground("#d1fae5").setFontColor("#065f46").setFontWeight("bold");
+  } else {
+    statusCell.setBackground("#fef3c7").setFontColor("#92400e").setFontWeight("bold");
+  }
+}
+
+// Fungsi Otomatisasi Layout Data Laporan (OPTIMAL BULK VERSION - Ribuan Baris Hanya 1 Detik!)
 function autofitAndStyleRows() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheetsToFormat = [SHEET_RECORDS, SHEET_ARCHIVE];
@@ -468,27 +488,53 @@ function autofitAndStyleRows() {
     const lastCol = sheet.getLastColumn();
     if (lastRow <= 1) return;
     
+    // 1. Set border dan vertical alignment secara massal
     const range = sheet.getRange(2, 1, lastRow - 1, lastCol);
     range.setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
     range.setVerticalAlignment("middle");
     
-    for (let r = 2; r <= lastRow; r++) {
-      const rowRange = sheet.getRange(r, 1, 1, lastCol);
-      if (r % 2 === 0) {
-        rowRange.setBackground("#f8fafc");
-      } else {
-        rowRange.setBackground("#ffffff");
-      }
-      sheet.setRowHeight(r, 24);
+    // 2. Set tinggi baris secara massal
+    sheet.setRowHeights(2, lastRow - 1, 24);
+    
+    // 3. Ambil data status secara massal (Hanya 1 panggilan API)
+    const statusValues = sheet.getRange(2, 19, lastRow - 1, 1).getValues();
+    
+    // 4. Siapkan array warna latar & font massal
+    const backgrounds = [];
+    const statusBackgrounds = [];
+    const statusFontColors = [];
+    const statusFontWeights = [];
+    
+    for (let i = 0; i < statusValues.length; i++) {
+      const r = i + 2;
+      const zebraBg = (r % 2 === 0) ? "#f8fafc" : "#ffffff";
       
-      const statusCell = sheet.getRange(r, 19);
-      const statusVal = statusCell.getValue();
+      const rowBg = [];
+      for (let c = 0; c < lastCol; c++) {
+        rowBg.push(zebraBg);
+      }
+      backgrounds.push(rowBg);
+      
+      const statusVal = String(statusValues[i][0]);
       if (statusVal === "Sudah Dikunjungi" || statusVal === "Terverifikasi") {
-        statusCell.setBackground("#d1fae5").setFontColor("#065f46").setFontWeight("bold");
+        statusBackgrounds.push(["#d1fae5"]);
+        statusFontColors.push(["#065f46"]);
+        statusFontWeights.push(["bold"]);
       } else {
-        statusCell.setBackground("#fef3c7").setFontColor("#92400e").setFontWeight("bold");
+        statusBackgrounds.push(["#fef3c7"]);
+        statusFontColors.push(["#92400e"]);
+        statusFontWeights.push(["bold"]);
       }
     }
+    
+    // 5. Terapkan warna latar belang-belang (zebra) secara massal
+    range.setBackgrounds(backgrounds);
+    
+    // 6. Terapkan warna khusus untuk kolom status secara massal
+    const statusRange = sheet.getRange(2, 19, lastRow - 1, 1);
+    statusRange.setBackgrounds(statusBackgrounds);
+    statusRange.setFontColors(statusFontColors);
+    statusRange.setFontWeights(statusFontWeights);
   });
 }
 
@@ -845,7 +891,8 @@ function syncRecord(data) {
     }
   }
   
-  autofitAndStyleRows();
+  const rowToStyle = (foundRowTarget !== -1) ? foundRowTarget : targetSheet.getLastRow();
+  styleSingleRow(targetSheet, rowToStyle, rowData.length);
   return { status: "success", message: "Laporan berhasil disinkronisasi!" };
 }
 `;
