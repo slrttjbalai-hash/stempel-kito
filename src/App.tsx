@@ -2217,8 +2217,21 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         }
       }, 100);
     } catch (err: any) {
-      console.error("Error opening camera stream:", err);
-      setCameraError("Gagal mengakses kamera internal. Hubungi admin atau gunakan opsi 'Upload & Kompres'.");
+      console.error("Error opening camera stream with constraints, trying fallback:", err);
+      try {
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({
+          video: true
+        });
+        setCameraStream(fallbackStream);
+        setTimeout(() => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = fallbackStream;
+          }
+        }, 100);
+      } catch (fallbackErr: any) {
+        console.error("Error with fallback camera stream:", fallbackErr);
+        setCameraError("Gagal mengakses kamera internal. Hubungi admin atau gunakan opsi 'Upload & Kompres'.");
+      }
     }
   };
 
