@@ -20,7 +20,7 @@ export default function HelpTab() {
  *    - Klik Deploy, setujui izin akses akun Anda, dan salin URL Webapp yang diberikan!
  */
 
-const SHEET_RECORDS = "Laporan STEMPEL KITO";
+const SHEET_RECORDS = "Laporan SLRT KITO";
 const SHEET_ARCHIVE = "Arsip Kunjungan";
 const SHEET_FACILITATORS = "Daftar Fasilitator";
 
@@ -87,8 +87,8 @@ function setupSheet() {
   if (hasData) {
     const response = ui.alert(
       "⚠️ Konfirmasi Format Tabel",
-      "Sistem mendeteksi ada data aktif di Google Sheets Anda.\n\n" +
-      "- Pilih 'YES' (YA) untuk melakukan FORMAT ULANG BERSIH (HAPUS semua data laporan & petugas).\n" +
+      "Sistem mendeteksi ada data aktif di Google Sheets Anda.\\n\\n" +
+      "- Pilih 'YES' (YA) untuk melakukan FORMAT ULANG BERSIH (HAPUS semua data laporan & petugas).\\n" +
       "- Pilih 'NO' (TIDAK) untuk MERAPIKAN TAMPILAN, warna, & struktur kolom TANPA menghapus data Anda.",
       ui.ButtonSet.YES_NO
     );
@@ -286,7 +286,7 @@ function moveVisitedToArchive() {
   let sheetArch = ss.getSheetByName(SHEET_ARCHIVE);
   
   if (!sheetRec) {
-    SpreadsheetApp.getUi().alert("❌ Sheet Laporan STEMPEL KITO tidak ditemukan.");
+    SpreadsheetApp.getUi().alert("❌ Sheet Laporan SLRT KITO tidak ditemukan.");
     return;
   }
   if (!sheetArch) {
@@ -358,7 +358,7 @@ function filterAndExportIntegrated() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_RECORDS);
   if (!sheet) {
-    SpreadsheetApp.getUi().alert("❌ Error: Tabel Laporan STEMPEL KITO tidak ditemukan. Silakan lakukan inisialisasi terlebih dahulu!");
+    SpreadsheetApp.getUi().alert("❌ Error: Tabel Laporan SLRT KITO tidak ditemukan. Silakan lakukan inisialisasi terlebih dahulu!");
     return;
   }
   
