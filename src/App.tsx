@@ -271,7 +271,18 @@ function mergeRecordsWithOverrides(cloudRecords: SLRTRecord[]): SLRTRecord[] {
     });
 
     const savedOver = localStorage.getItem('slrt_record_overrides');
-    if (!savedOver) return filteredCloud;
+    if (!savedOver) {
+      // Deduplicate filteredCloud by id even if there are no overrides
+      const uniqueRecords: SLRTRecord[] = [];
+      const seenIds = new Set<string>();
+      filteredCloud.forEach(rec => {
+        if (!seenIds.has(rec.id)) {
+          seenIds.add(rec.id);
+          uniqueRecords.push(rec);
+        }
+      });
+      return uniqueRecords;
+    }
     const overrides = JSON.parse(savedOver);
     
     const mergedList = [...filteredCloud];
@@ -333,14 +344,46 @@ function mergeRecordsWithOverrides(cloudRecords: SLRTRecord[]): SLRTRecord[] {
         }
       }
     });
-    return mergedList;
+
+    // Final deduplication to guarantee no duplicate keys/ids in the output list!
+    const finalUniqueRecords: SLRTRecord[] = [];
+    const finalSeenIds = new Set<string>();
+    mergedList.forEach(rec => {
+      if (rec && rec.id) {
+        if (!finalSeenIds.has(rec.id)) {
+          finalSeenIds.add(rec.id);
+          finalUniqueRecords.push(rec);
+        } else {
+          // If we see it again, prefer the one that is visited ('Sudah Dikunjungi')
+          const existingIdx = finalUniqueRecords.findIndex(r => r.id === rec.id);
+          if (existingIdx !== -1) {
+            const existingRec = finalUniqueRecords[existingIdx];
+            if (rec.statusKunjungan === 'Sudah Dikunjungi' && existingRec.statusKunjungan !== 'Sudah Dikunjungi') {
+              finalUniqueRecords[existingIdx] = rec;
+            }
+          }
+        }
+      }
+    });
+
+    return finalUniqueRecords;
   } catch (e) {
     console.error("Gagal melakukan merge data lokal dengan awan:", e);
     // Fallback: make sure we still filter the input list in the catch block if possible
     try {
       const deletedIdsString = localStorage.getItem('slrt_deleted_record_ids') || '[]';
       const deletedIds = JSON.parse(deletedIdsString);
-      return cloudRecords.filter(r => r && !deletedIds.includes(r.id) && r.statusKunjungan !== 'Dihapus' && r.statusKunjungan !== 'DELETED');
+      const filtered = cloudRecords.filter(r => r && !deletedIds.includes(r.id) && r.statusKunjungan !== 'Dihapus' && r.statusKunjungan !== 'DELETED');
+      
+      const fallbackUnique: SLRTRecord[] = [];
+      const fallbackSeen = new Set<string>();
+      filtered.forEach(rec => {
+        if (rec && rec.id && !fallbackSeen.has(rec.id)) {
+          fallbackSeen.add(rec.id);
+          fallbackUnique.push(rec);
+        }
+      });
+      return fallbackUnique;
     } catch (_) {}
     return cloudRecords;
   }
