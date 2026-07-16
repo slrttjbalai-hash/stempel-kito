@@ -815,7 +815,7 @@ export default function App() {
     return fList;
   });
 
-  const GOOGLE_SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbzvANvDUP6rS1NSJ6lgpGOaIRy3UAzCGOIsZMYh4sbiutpq2cnn92HNkZiGebdqCFbEcQ/exec";
+  const GOOGLE_SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbzWMXbCEBRXKcSM3T6tyRKnjlyW95XlE-3BtgRYaHJIk7BLALJxF9iBxebFkzOw9oSkow/exec";
 
   // Reconcile list of facilitators with administrative status overrides
   const getReconciledFacilitators = (rawFacs: FacilitatorUser[]): FacilitatorUser[] => {
