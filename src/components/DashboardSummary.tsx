@@ -589,19 +589,22 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     
     currentY += 10;
 
-    doc.setFillColor(71, 85, 105);
-    doc.rect(leftMargin, currentY, usableWidth, 7, 'F');
-    doc.setFont('Helvetica', 'bold');
-    doc.setFontSize(7);
-    doc.setTextColor(255, 255, 255);
-    doc.text("No", leftMargin + 1, currentY + 4.5);
-    doc.text("Nama Klien", leftMargin + 8, currentY + 4.5);
-    doc.text("Kelurahan / Kecamatan", leftMargin + 43, currentY + 4.5);
-    doc.text("Tanggal Audit", leftMargin + 84, currentY + 4.5);
-    doc.text("Status SOS", leftMargin + 116, currentY + 4.5);
-    doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 133, currentY + 4.5);
+    const drawCompletedTableHeader = () => {
+      doc.setFillColor(71, 85, 105);
+      doc.rect(leftMargin, currentY, usableWidth, 7, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text("No", leftMargin + 1, currentY + 4.5);
+      doc.text("Nama Klien", leftMargin + 8, currentY + 4.5);
+      doc.text("Kelurahan / Kecamatan", leftMargin + 52, currentY + 4.5);
+      doc.text("Tanggal Audit", leftMargin + 95, currentY + 4.5);
+      doc.text("Status SOS", leftMargin + 119, currentY + 4.5);
+      doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 133, currentY + 4.5);
+      currentY += 7;
+    };
 
-    currentY += 7;
+    drawCompletedTableHeader();
 
     if (completedList.length === 0) {
       checkSpaceAndBreaks(10);
@@ -614,41 +617,97 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     } else {
       let rId = 1;
       completedList.forEach(item => {
-        checkSpaceAndBreaks(8);
+        const noText = rId.toString();
+        const namaText = item.namaKlien || '-';
+        const wilayahText = `${item.kelurahan || '-'}, ${item.kecamatan || '-'}`;
+
+        let tglText = item.tanggalPemeriksaan || item.hariTanggal || '-';
+        if (tglText.includes(',')) {
+          tglText = tglText.split(',')[1] || tglText;
+          tglText = tglText.trim();
+        }
+        if (tglText.toLowerCase().includes('pukul')) {
+          tglText = tglText.replace(/pukul\s+(\d{1,2})[\s.:](\d{1,2})[\s.:](\d{1,2})\b/gi, '$1:$2');
+          tglText = tglText.replace(/\s+wib/gi, '');
+        }
+
+        const statusText = item.status || 'Miskin';
+        const petugasText = item.namaPendata || item.namaFasilitator || '-';
+
+        // Split text to fit columns perfectly
+        const namaLines = doc.splitTextToSize(namaText, 42);
+        const wilayahLines = doc.splitTextToSize(wilayahText, 41);
+        const tglLines = doc.splitTextToSize(tglText, 22);
+        const statusLines = doc.splitTextToSize(statusText, 12);
+        const petugasLines = doc.splitTextToSize(petugasText, 46);
+
+        const maxLines = Math.max(
+          1,
+          namaLines.length,
+          wilayahLines.length,
+          tglLines.length,
+          statusLines.length,
+          petugasLines.length
+        );
+
+        const rowHeight = Math.max(6, (maxLines * 3) + 2.5);
+
+        // Check page break with the exact height needed
+        if (currentY + rowHeight > 270) {
+          currentY = startNewPage();
+          drawCompletedTableHeader();
+        }
 
         if (rId % 2 === 0) {
           doc.setFillColor(248, 250, 252);
-          doc.rect(leftMargin, currentY, usableWidth, 6, 'F');
+          doc.rect(leftMargin, currentY, usableWidth, rowHeight, 'F');
         }
 
         doc.setDrawColor(241, 245, 249);
         doc.setLineWidth(0.1);
-        doc.line(leftMargin, currentY + 6, docWidth - rightMargin, currentY + 6);
+        doc.line(leftMargin, currentY + rowHeight, docWidth - rightMargin, currentY + rowHeight);
 
-        doc.setFont('Helvetica', 'bold');
         doc.setFontSize(7.5);
-        doc.setTextColor(51, 65, 85); // Explicitly reset text color to dark gray so that data is readable (was white)
-        doc.text(rId.toString(), leftMargin + 1, currentY + 4.2);
-        doc.text(clipText(item.namaKlien || '-', 34), leftMargin + 8, currentY + 4.2);
+        doc.setTextColor(51, 65, 85);
+
+        // 1. No
+        doc.setFont('Helvetica', 'bold');
+        const noStartY = currentY + ((rowHeight - (1 * 3)) / 2) + 2.7;
+        doc.text(noText, leftMargin + 1, noStartY);
+
+        // 2. Nama Klien (bold, split)
+        const namaStartY = currentY + ((rowHeight - (namaLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < namaLines.length; i++) {
+          doc.text(namaLines[i], leftMargin + 8, namaStartY + (i * 3));
+        }
+
+        // 3. Kelurahan / Kecamatan (normal, split)
         doc.setFont('Helvetica', 'normal');
-        doc.text(clipText(`${item.kelurahan || '-'}, ${item.kecamatan || '-'}`, 40), leftMargin + 43, currentY + 4.2);
-        
-        let tgl = item.tanggalPemeriksaan || item.hariTanggal || '-';
-        if (tgl.includes(',')) {
-          tgl = tgl.split(',')[1].trim();
+        const wilayahStartY = currentY + ((rowHeight - (wilayahLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < wilayahLines.length; i++) {
+          doc.text(wilayahLines[i], leftMargin + 52, wilayahStartY + (i * 3));
         }
-        if (tgl.toLowerCase().includes('pukul')) {
-          tgl = tgl.replace(/pukul\s+(\d{1,2})[\s.:](\d{1,2})[\s.:](\d{1,2})\b/gi, '$1:$2');
-          tgl = tgl.replace(/\s+wib/gi, '');
+
+        // 4. Tanggal Audit
+        const tglStartY = currentY + ((rowHeight - (tglLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < tglLines.length; i++) {
+          doc.text(tglLines[i], leftMargin + 95, tglStartY + (i * 3));
         }
-        doc.text(clipText(tgl, 31), leftMargin + 84, currentY + 4.2);
-        doc.text(clipText(item.status || 'Miskin', 16), leftMargin + 116, currentY + 4.2);
-        
-        const facilitatorName = item.namaPendata || item.namaFasilitator || '-';
-        doc.text(clipText(facilitatorName, 46), leftMargin + 133, currentY + 4.2);
+
+        // 5. Status SOS
+        const statusStartY = currentY + ((rowHeight - (statusLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < statusLines.length; i++) {
+          doc.text(statusLines[i], leftMargin + 119, statusStartY + (i * 3));
+        }
+
+        // 6. Petugas Lapangan
+        const petugasStartY = currentY + ((rowHeight - (petugasLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < petugasLines.length; i++) {
+          doc.text(petugasLines[i], leftMargin + 133, petugasStartY + (i * 3));
+        }
 
         rId++;
-        currentY += 6;
+        currentY += rowHeight;
       });
       currentY += 5;
     }
@@ -669,19 +728,22 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     
     currentY += 10;
 
-    doc.setFillColor(71, 85, 105);
-    doc.rect(leftMargin, currentY, usableWidth, 7, 'F');
-    doc.setFont('Helvetica', 'bold');
-    doc.setFontSize(7);
-    doc.setTextColor(255, 255, 255);
-    doc.text("No", leftMargin + 1, currentY + 4.5);
-    doc.text("Nama Klien", leftMargin + 8, currentY + 4.5);
-    doc.text("Kelurahan / Kecamatan", leftMargin + 43, currentY + 4.5);
-    doc.text("Tanggal Registrasi", leftMargin + 84, currentY + 4.5);
-    doc.text("Status SOS", leftMargin + 116, currentY + 4.5);
-    doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 133, currentY + 4.5);
+    const drawPendingTableHeader = () => {
+      doc.setFillColor(71, 85, 105);
+      doc.rect(leftMargin, currentY, usableWidth, 7, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text("No", leftMargin + 1, currentY + 4.5);
+      doc.text("Nama Klien", leftMargin + 8, currentY + 4.5);
+      doc.text("Kelurahan / Kecamatan", leftMargin + 52, currentY + 4.5);
+      doc.text("Tanggal Registrasi", leftMargin + 95, currentY + 4.5);
+      doc.text("Status SOS", leftMargin + 119, currentY + 4.5);
+      doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 133, currentY + 4.5);
+      currentY += 7;
+    };
 
-    currentY += 7;
+    drawPendingTableHeader();
 
     if (pendingList.length === 0) {
       checkSpaceAndBreaks(10);
@@ -694,41 +756,97 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     } else {
       let pId = 1;
       pendingList.forEach(item => {
-        checkSpaceAndBreaks(8);
+        const noText = pId.toString();
+        const namaText = item.namaKlien || '-';
+        const wilayahText = `${item.kelurahan || '-'}, ${item.kecamatan || '-'}`;
+
+        let tglText = item.hariTanggal || '-';
+        if (tglText.includes(',')) {
+          tglText = tglText.split(',')[1] || tglText;
+          tglText = tglText.trim();
+        }
+        if (tglText.toLowerCase().includes('pukul')) {
+          tglText = tglText.replace(/pukul\s+(\d{1,2})[\s.:](\d{1,2})[\s.:](\d{1,2})\b/gi, '$1:$2');
+          tglText = tglText.replace(/\s+wib/gi, '');
+        }
+
+        const statusText = item.status || 'Miskin';
+        const petugasText = item.namaPendata || item.namaFasilitator || '-';
+
+        // Split text to fit columns perfectly
+        const namaLines = doc.splitTextToSize(namaText, 42);
+        const wilayahLines = doc.splitTextToSize(wilayahText, 41);
+        const tglLines = doc.splitTextToSize(tglText, 22);
+        const statusLines = doc.splitTextToSize(statusText, 12);
+        const petugasLines = doc.splitTextToSize(petugasText, 46);
+
+        const maxLines = Math.max(
+          1,
+          namaLines.length,
+          wilayahLines.length,
+          tglLines.length,
+          statusLines.length,
+          petugasLines.length
+        );
+
+        const rowHeight = Math.max(6, (maxLines * 3) + 2.5);
+
+        // Check page break with the exact height needed
+        if (currentY + rowHeight > 270) {
+          currentY = startNewPage();
+          drawPendingTableHeader();
+        }
 
         if (pId % 2 === 0) {
           doc.setFillColor(248, 250, 252);
-          doc.rect(leftMargin, currentY, usableWidth, 6, 'F');
+          doc.rect(leftMargin, currentY, usableWidth, rowHeight, 'F');
         }
 
         doc.setDrawColor(241, 245, 249);
         doc.setLineWidth(0.1);
-        doc.line(leftMargin, currentY + 6, docWidth - rightMargin, currentY + 6);
+        doc.line(leftMargin, currentY + rowHeight, docWidth - rightMargin, currentY + rowHeight);
 
-        doc.setFont('Helvetica', 'bold');
         doc.setFontSize(7.5);
-        doc.setTextColor(51, 65, 85); // Explicitly reset text color to dark gray
-        doc.text(pId.toString(), leftMargin + 1, currentY + 4.2);
-        doc.text(clipText(item.namaKlien || '-', 34), leftMargin + 8, currentY + 4.2);
+        doc.setTextColor(51, 65, 85);
+
+        // 1. No
+        doc.setFont('Helvetica', 'bold');
+        const noStartY = currentY + ((rowHeight - (1 * 3)) / 2) + 2.7;
+        doc.text(noText, leftMargin + 1, noStartY);
+
+        // 2. Nama Klien (bold, split)
+        const namaStartY = currentY + ((rowHeight - (namaLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < namaLines.length; i++) {
+          doc.text(namaLines[i], leftMargin + 8, namaStartY + (i * 3));
+        }
+
+        // 3. Kelurahan / Kecamatan (normal, split)
         doc.setFont('Helvetica', 'normal');
-        doc.text(clipText(`${item.kelurahan || '-'}, ${item.kecamatan || '-'}`, 40), leftMargin + 43, currentY + 4.2);
-        
-        let tgl = item.hariTanggal || '-';
-        if (tgl.includes(',')) {
-          tgl = tgl.split(',')[1].trim();
+        const wilayahStartY = currentY + ((rowHeight - (wilayahLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < wilayahLines.length; i++) {
+          doc.text(wilayahLines[i], leftMargin + 52, wilayahStartY + (i * 3));
         }
-        if (tgl.toLowerCase().includes('pukul')) {
-          tgl = tgl.replace(/pukul\s+(\d{1,2})[\s.:](\d{1,2})[\s.:](\d{1,2})\b/gi, '$1:$2');
-          tgl = tgl.replace(/\s+wib/gi, '');
+
+        // 4. Tanggal Registrasi
+        const tglStartY = currentY + ((rowHeight - (tglLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < tglLines.length; i++) {
+          doc.text(tglLines[i], leftMargin + 95, tglStartY + (i * 3));
         }
-        doc.text(clipText(tgl, 31), leftMargin + 84, currentY + 4.2);
-        doc.text(clipText(item.status || 'Miskin', 16), leftMargin + 116, currentY + 4.2);
-        
-        const facilitatorName = item.namaPendata || item.namaFasilitator || '-';
-        doc.text(clipText(facilitatorName, 46), leftMargin + 133, currentY + 4.2);
+
+        // 5. Status SOS
+        const statusStartY = currentY + ((rowHeight - (statusLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < statusLines.length; i++) {
+          doc.text(statusLines[i], leftMargin + 119, statusStartY + (i * 3));
+        }
+
+        // 6. Petugas Lapangan
+        const petugasStartY = currentY + ((rowHeight - (petugasLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < petugasLines.length; i++) {
+          doc.text(petugasLines[i], leftMargin + 133, petugasStartY + (i * 3));
+        }
 
         pId++;
-        currentY += 6;
+        currentY += rowHeight;
       });
       currentY += 5;
     }

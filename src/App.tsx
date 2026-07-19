@@ -1120,7 +1120,7 @@ export default function App() {
     }
   };
 
-  // Synchronize on startup and pull changes periodically
+  // Synchronize on startup
   useEffect(() => {
     async function initializeOfflineCache() {
       // 1. Run backward-compatible migration from LocalStorage to IndexedDB
@@ -1140,13 +1140,6 @@ export default function App() {
     }
     
     initializeOfflineCache();
-
-    // Auto-update every 12 seconds to ensure registrations and records are in near-real-time sync across devices
-    const syncInterval = setInterval(() => {
-      refreshFromCloud(false, true);
-    }, 12000);
-
-    return () => clearInterval(syncInterval);
   }, []);
 
   // Form input states for Authentication Gate
@@ -1203,7 +1196,12 @@ export default function App() {
   const [verifierLng, setVerifierLng] = useState<number | null>(null);
   const [photoResolutionMode, setPhotoResolutionMode] = useState<'standard' | 'high'>(() => {
     const saved = localStorage.getItem('slrt_photo_resolution_mode');
-    return (saved === 'standard' || saved === 'high') ? saved : 'high';
+    return (saved === 'standard' || saved === 'high') ? saved : 'standard';
+  });
+
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('slrt_auto_sync_enabled');
+    return saved === 'true'; // Default to false (disabled) to save maximum mobile internet data
   });
 
   const [formLatitude, setFormLatitude] = useState<number | null>(null);
@@ -1213,6 +1211,23 @@ export default function App() {
     setPhotoResolutionMode(mode);
     safeLocalStorageSetItem('slrt_photo_resolution_mode', mode);
   };
+
+  const toggleAutoSync = () => {
+    const newVal = !autoSyncEnabled;
+    setAutoSyncEnabled(newVal);
+    safeLocalStorageSetItem('slrt_auto_sync_enabled', newVal ? 'true' : 'false');
+  };
+
+  // Set up periodic auto sync based on autoSyncEnabled (every 5 minutes / 300,000 ms)
+  useEffect(() => {
+    if (!autoSyncEnabled) return;
+
+    const syncInterval = setInterval(() => {
+      refreshFromCloud(false, true);
+    }, 300000); // 5 minutes to drastically save data usage
+
+    return () => clearInterval(syncInterval);
+  }, [autoSyncEnabled]);
 
   const memoizedVerifierFotoKkKtp = useMemo(() => {
     return getSafeBase64Url(verifierFotoKkKtp);
@@ -4505,6 +4520,22 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
               {cloudLoading ? 'Menyinkronkan...' : 'Database Terhubung'}
             </button>
 
+            {/* Auto-Sync Toggle to Save Data Packages */}
+            <button
+              onClick={toggleAutoSync}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold border transition-all cursor-pointer ${
+                autoSyncEnabled
+                  ? 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+                  : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+              }`}
+              title="Aktifkan/Matikan sinkronisasi latar belakang otomatis setiap 5 menit untuk menghemat paket data internet"
+            >
+              <span>🔄 Auto-Sync:</span>
+              <span className={`px-1 rounded text-[8px] font-black ${autoSyncEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-300 text-slate-700'}`}>
+                {autoSyncEnabled ? 'AKTIF (5m)' : 'MATI'}
+              </span>
+            </button>
+
             <button
               onClick={handleForceSynchronizeFromCloud}
               disabled={cloudLoading}
@@ -6282,8 +6313,29 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
                 </div>
 
                 <div className="text-[8px] text-slate-400 leading-normal italic">
-                  Data kunjungan disinkronisasikan multi-perangkat secara otomatis setiap <b className="text-slate-600 font-mono">12 detik</b> antara akun Admin Dinsos dan Fasilitator Lapangan.
+                  Data kunjungan disinkronisasikan secara manual atau otomatis setiap <b className="text-slate-600 font-mono">5 menit</b> jika fitur Auto-Sync diaktifkan untuk menghemat paket data.
                 </div>
+
+                {/* Auto Sync Toggle Button inside Sidebar */}
+                <button
+                  type="button"
+                  onClick={toggleAutoSync}
+                  className={`w-full py-2 px-3 rounded-lg border text-[10px] font-black transition-all flex items-center justify-between cursor-pointer select-none ${
+                    autoSyncEnabled
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-800'
+                      : 'bg-slate-50 border-slate-200 text-slate-600'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span>🔄</span>
+                    <span>Sinkronisasi Otomatis (5 Menit)</span>
+                  </span>
+                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-black ${
+                    autoSyncEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-300 text-slate-700'
+                  }`}>
+                    {autoSyncEnabled ? 'AKTIF' : 'MATI'}
+                  </span>
+                </button>
               </div>
 
               {unsyncedCount > 0 ? (
