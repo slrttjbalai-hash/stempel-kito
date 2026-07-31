@@ -596,11 +596,12 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
       doc.setFontSize(7.5);
       doc.setTextColor(255, 255, 255);
       doc.text("No", leftMargin + 1, currentY + 4.5);
-      doc.text("Nama Klien", leftMargin + 8, currentY + 4.5);
-      doc.text("Kelurahan / Kecamatan", leftMargin + 52, currentY + 4.5);
-      doc.text("Tanggal Audit", leftMargin + 95, currentY + 4.5);
-      doc.text("Status SOS", leftMargin + 119, currentY + 4.5);
-      doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 133, currentY + 4.5);
+      doc.text("Nama Klien", leftMargin + 6, currentY + 4.5);
+      doc.text("Alamat", leftMargin + 35, currentY + 4.5);
+      doc.text("Kelurahan / Kecamatan", leftMargin + 74, currentY + 4.5);
+      doc.text("Tanggal Audit", leftMargin + 105, currentY + 4.5);
+      doc.text("Catatan Petugas", leftMargin + 128, currentY + 4.5);
+      doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 153, currentY + 4.5);
       currentY += 7;
     };
 
@@ -619,6 +620,7 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
       completedList.forEach(item => {
         const noText = rId.toString();
         const namaText = item.namaKlien || '-';
+        const alamatText = item.alamatKlien || '-';
         const wilayahText = `${item.kelurahan || '-'}, ${item.kecamatan || '-'}`;
 
         let tglText = item.tanggalPemeriksaan || item.hariTanggal || '-';
@@ -631,22 +633,24 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
           tglText = tglText.replace(/\s+wib/gi, '');
         }
 
-        const statusText = item.status || 'Miskin';
+        const catatanText = item.catatanPemeriksa || item.catatan_pendata || item.jenisPengaduan || 'Sesuai Kriteria';
         const petugasText = item.namaPendata || item.namaFasilitator || '-';
 
         // Split text to fit columns perfectly
-        const namaLines = doc.splitTextToSize(namaText, 42);
-        const wilayahLines = doc.splitTextToSize(wilayahText, 41);
-        const tglLines = doc.splitTextToSize(tglText, 22);
-        const statusLines = doc.splitTextToSize(statusText, 12);
-        const petugasLines = doc.splitTextToSize(petugasText, 46);
+        const namaLines = doc.splitTextToSize(namaText, 28);
+        const alamatLines = doc.splitTextToSize(alamatText, 37);
+        const wilayahLines = doc.splitTextToSize(wilayahText, 29);
+        const tglLines = doc.splitTextToSize(tglText, 21);
+        const catatanLines = doc.splitTextToSize(catatanText, 23);
+        const petugasLines = doc.splitTextToSize(petugasText, 26);
 
         const maxLines = Math.max(
           1,
           namaLines.length,
+          alamatLines.length,
           wilayahLines.length,
           tglLines.length,
-          statusLines.length,
+          catatanLines.length,
           petugasLines.length
         );
 
@@ -678,32 +682,38 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
         // 2. Nama Klien (bold, split)
         const namaStartY = currentY + ((rowHeight - (namaLines.length * 3)) / 2) + 2.7;
         for (let i = 0; i < namaLines.length; i++) {
-          doc.text(namaLines[i], leftMargin + 8, namaStartY + (i * 3));
+          doc.text(namaLines[i], leftMargin + 6, namaStartY + (i * 3));
         }
 
-        // 3. Kelurahan / Kecamatan (normal, split)
+        // 3. Alamat (normal, split)
         doc.setFont('Helvetica', 'normal');
+        const alamatStartY = currentY + ((rowHeight - (alamatLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < alamatLines.length; i++) {
+          doc.text(alamatLines[i], leftMargin + 35, alamatStartY + (i * 3));
+        }
+
+        // 4. Kelurahan / Kecamatan (normal, split)
         const wilayahStartY = currentY + ((rowHeight - (wilayahLines.length * 3)) / 2) + 2.7;
         for (let i = 0; i < wilayahLines.length; i++) {
-          doc.text(wilayahLines[i], leftMargin + 52, wilayahStartY + (i * 3));
+          doc.text(wilayahLines[i], leftMargin + 74, wilayahStartY + (i * 3));
         }
 
-        // 4. Tanggal Audit
+        // 5. Tanggal Audit
         const tglStartY = currentY + ((rowHeight - (tglLines.length * 3)) / 2) + 2.7;
         for (let i = 0; i < tglLines.length; i++) {
-          doc.text(tglLines[i], leftMargin + 95, tglStartY + (i * 3));
+          doc.text(tglLines[i], leftMargin + 105, tglStartY + (i * 3));
         }
 
-        // 5. Status SOS
-        const statusStartY = currentY + ((rowHeight - (statusLines.length * 3)) / 2) + 2.7;
-        for (let i = 0; i < statusLines.length; i++) {
-          doc.text(statusLines[i], leftMargin + 119, statusStartY + (i * 3));
+        // 6. Catatan Petugas
+        const catatanStartY = currentY + ((rowHeight - (catatanLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < catatanLines.length; i++) {
+          doc.text(catatanLines[i], leftMargin + 128, catatanStartY + (i * 3));
         }
 
-        // 6. Petugas Lapangan
+        // 7. Petugas Lapangan
         const petugasStartY = currentY + ((rowHeight - (petugasLines.length * 3)) / 2) + 2.7;
         for (let i = 0; i < petugasLines.length; i++) {
-          doc.text(petugasLines[i], leftMargin + 133, petugasStartY + (i * 3));
+          doc.text(petugasLines[i], leftMargin + 153, petugasStartY + (i * 3));
         }
 
         rId++;
@@ -735,11 +745,12 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
       doc.setFontSize(7.5);
       doc.setTextColor(255, 255, 255);
       doc.text("No", leftMargin + 1, currentY + 4.5);
-      doc.text("Nama Klien", leftMargin + 8, currentY + 4.5);
-      doc.text("Kelurahan / Kecamatan", leftMargin + 52, currentY + 4.5);
-      doc.text("Tanggal Registrasi", leftMargin + 95, currentY + 4.5);
-      doc.text("Status SOS", leftMargin + 119, currentY + 4.5);
-      doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 133, currentY + 4.5);
+      doc.text("Nama Klien", leftMargin + 6, currentY + 4.5);
+      doc.text("Alamat", leftMargin + 35, currentY + 4.5);
+      doc.text("Kelurahan / Kecamatan", leftMargin + 74, currentY + 4.5);
+      doc.text("Tanggal Registrasi", leftMargin + 105, currentY + 4.5);
+      doc.text("Catatan Petugas", leftMargin + 128, currentY + 4.5);
+      doc.text("Petugas Lapangan (Fasilitator)", leftMargin + 153, currentY + 4.5);
       currentY += 7;
     };
 
@@ -758,6 +769,7 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
       pendingList.forEach(item => {
         const noText = pId.toString();
         const namaText = item.namaKlien || '-';
+        const alamatText = item.alamatKlien || '-';
         const wilayahText = `${item.kelurahan || '-'}, ${item.kecamatan || '-'}`;
 
         let tglText = item.hariTanggal || '-';
@@ -770,22 +782,24 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
           tglText = tglText.replace(/\s+wib/gi, '');
         }
 
-        const statusText = item.status || 'Miskin';
+        const catatanText = item.catatanPemeriksa || item.catatan_pendata || item.jenisPengaduan || 'Belum Ada Catatan';
         const petugasText = item.namaPendata || item.namaFasilitator || '-';
 
         // Split text to fit columns perfectly
-        const namaLines = doc.splitTextToSize(namaText, 42);
-        const wilayahLines = doc.splitTextToSize(wilayahText, 41);
-        const tglLines = doc.splitTextToSize(tglText, 22);
-        const statusLines = doc.splitTextToSize(statusText, 12);
-        const petugasLines = doc.splitTextToSize(petugasText, 46);
+        const namaLines = doc.splitTextToSize(namaText, 28);
+        const alamatLines = doc.splitTextToSize(alamatText, 37);
+        const wilayahLines = doc.splitTextToSize(wilayahText, 29);
+        const tglLines = doc.splitTextToSize(tglText, 21);
+        const catatanLines = doc.splitTextToSize(catatanText, 23);
+        const petugasLines = doc.splitTextToSize(petugasText, 26);
 
         const maxLines = Math.max(
           1,
           namaLines.length,
+          alamatLines.length,
           wilayahLines.length,
           tglLines.length,
-          statusLines.length,
+          catatanLines.length,
           petugasLines.length
         );
 
@@ -817,32 +831,38 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
         // 2. Nama Klien (bold, split)
         const namaStartY = currentY + ((rowHeight - (namaLines.length * 3)) / 2) + 2.7;
         for (let i = 0; i < namaLines.length; i++) {
-          doc.text(namaLines[i], leftMargin + 8, namaStartY + (i * 3));
+          doc.text(namaLines[i], leftMargin + 6, namaStartY + (i * 3));
         }
 
-        // 3. Kelurahan / Kecamatan (normal, split)
+        // 3. Alamat (normal, split)
         doc.setFont('Helvetica', 'normal');
+        const alamatStartY = currentY + ((rowHeight - (alamatLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < alamatLines.length; i++) {
+          doc.text(alamatLines[i], leftMargin + 35, alamatStartY + (i * 3));
+        }
+
+        // 4. Kelurahan / Kecamatan (normal, split)
         const wilayahStartY = currentY + ((rowHeight - (wilayahLines.length * 3)) / 2) + 2.7;
         for (let i = 0; i < wilayahLines.length; i++) {
-          doc.text(wilayahLines[i], leftMargin + 52, wilayahStartY + (i * 3));
+          doc.text(wilayahLines[i], leftMargin + 74, wilayahStartY + (i * 3));
         }
 
-        // 4. Tanggal Registrasi
+        // 5. Tanggal Registrasi
         const tglStartY = currentY + ((rowHeight - (tglLines.length * 3)) / 2) + 2.7;
         for (let i = 0; i < tglLines.length; i++) {
-          doc.text(tglLines[i], leftMargin + 95, tglStartY + (i * 3));
+          doc.text(tglLines[i], leftMargin + 105, tglStartY + (i * 3));
         }
 
-        // 5. Status SOS
-        const statusStartY = currentY + ((rowHeight - (statusLines.length * 3)) / 2) + 2.7;
-        for (let i = 0; i < statusLines.length; i++) {
-          doc.text(statusLines[i], leftMargin + 119, statusStartY + (i * 3));
+        // 6. Catatan Petugas
+        const catatanStartY = currentY + ((rowHeight - (catatanLines.length * 3)) / 2) + 2.7;
+        for (let i = 0; i < catatanLines.length; i++) {
+          doc.text(catatanLines[i], leftMargin + 128, catatanStartY + (i * 3));
         }
 
-        // 6. Petugas Lapangan
+        // 7. Petugas Lapangan
         const petugasStartY = currentY + ((rowHeight - (petugasLines.length * 3)) / 2) + 2.7;
         for (let i = 0; i < petugasLines.length; i++) {
-          doc.text(petugasLines[i], leftMargin + 133, petugasStartY + (i * 3));
+          doc.text(petugasLines[i], leftMargin + 153, petugasStartY + (i * 3));
         }
 
         pId++;
@@ -852,30 +872,38 @@ export default function DashboardSummary({ records, onSelectRecord }: DashboardS
     }
 
     // SIGNATURE SECTION
-    checkSpaceAndBreaks(35);
+    checkSpaceAndBreaks(45);
     
     currentY += 5;
-    const sigX1 = leftMargin + 10;
-    const sigX2 = docWidth - rightMargin - 65;
+    const sigX1 = leftMargin + 5;
+    const sigX2 = docWidth - rightMargin - 80;
 
     doc.setFont('Helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
-    doc.text("Diverifikasi Oleh,", sigX1, currentY);
+    doc.text("DIKETAHUI OLEH,", sigX1, currentY);
     doc.text("Penanggung Jawab STEMPEL KITO,", sigX2, currentY);
+
+    currentY += 4;
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(30, 41, 59);
+    doc.text("KEPALA DINAS SOSIAL KOTA TANJUNGBALAI", sigX1, currentY);
+    doc.text("KEPALA BIDANG PEMBERDAYAAN SOSIAL", sigX2, currentY);
     
     currentY += 18;
     doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(8.5);
     doc.setTextColor(30, 41, 59);
-    doc.text("( ____________________ )", sigX1, currentY);
-    doc.text("( SLRT TJBALAI ADMIN )", sigX2, currentY);
+    doc.text("ZUL ABDIMAN, S.Kom., MM", sigX1, currentY);
+    doc.text("ANDIKA CAHYADI, M.Pd", sigX2, currentY);
     
     currentY += 4;
     doc.setFont('Helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(115, 115, 115);
-    doc.text("Penyelia Data Kelompok Jabatan", sigX1, currentY);
-    doc.text("NIP. 19890520 201212 1 002", sigX2, currentY);
+    doc.text("NIP. 19741228 200003 1 003", sigX1, currentY);
+    doc.text("NIP. 19780311 200502 1 004", sigX2, currentY);
 
     // Footer decoration on all pages
     for (let i = 1; i <= totalPages; i++) {

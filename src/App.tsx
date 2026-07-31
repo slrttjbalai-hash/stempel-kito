@@ -860,6 +860,24 @@ export default function App() {
 
   const GOOGLE_SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbx475qL3YoVQoDJQ4vtOIMIpjPforxxnXRm8R8dONc_lpE31ks0PleiQvcDJ7WVwURpog/exec";
 
+  // Helper to fetch with a specified timeout (default 8 seconds) to prevent infinite hanging in poor cellular coverage
+  const fetchWithTimeout = async (resource: string, options: RequestInit & { timeout?: number } = {}) => {
+    const { timeout = 8000, ...rest } = options;
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(resource, {
+        ...rest,
+        signal: controller.signal
+      });
+      clearTimeout(id);
+      return response;
+    } catch (error) {
+      clearTimeout(id);
+      throw error;
+    }
+  };
+
   // Reconcile list of facilitators with administrative status overrides
   const getReconciledFacilitators = (rawFacs: FacilitatorUser[]): FacilitatorUser[] => {
     let filteredFacs = rawFacs;
@@ -973,7 +991,7 @@ export default function App() {
       setSelectedRecordId(null);
       
       // Pull fresh data
-      const response = await fetch(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
+      const response = await fetchWithTimeout(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
       if (response.ok) {
         const json = await response.json();
         if (json.records && Array.isArray(json.records)) {
@@ -1025,7 +1043,7 @@ export default function App() {
       setCloudLoading(true);
     }
     try {
-      const response = await fetch(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
+      const response = await fetchWithTimeout(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
       if (response.ok) {
         const json = await response.json();
         if (json.records && Array.isArray(json.records)) {
@@ -1473,8 +1491,8 @@ export default function App() {
     setCloudLoading(true);
     let currentFacs = facilitators;
     try {
-      // Fetch latest registered facilitators & records in real-time
-      const response = await fetch(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
+      // Use fetchWithTimeout (8s timeout) to prevent infinite hanging under weak cellular network
+      const response = await fetchWithTimeout(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
       if (response.ok) {
         const json = await response.json();
         if (json.facilitators && Array.isArray(json.facilitators)) {
@@ -1521,8 +1539,13 @@ export default function App() {
         const now = new Date();
         setLastCloudSync(now.toLocaleTimeString('id-ID'));
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn("Gagal sinkron data cloud saat login, memproses dengan data luring offline lokal:", err);
+      // Give clear & friendly user feedback that the system is safely falling back to local cached credentials
+      const isTimeout = err instanceof DOMException && err.name === 'AbortError';
+      if (isTimeout) {
+        alert("💡 Koneksi Google Sheets lambat/terputus.\nSistem otomatis beralih ke Mode Luring (Offline) agar Anda tetap dapat login menggunakan akun lokal terdaftar.");
+      }
     } finally {
       setCloudLoading(false);
     }
@@ -1593,7 +1616,7 @@ export default function App() {
     let currentFacs = facilitators;
     try {
       // Sync facilitators from cloud to guarantee duplication check is 100% accurate across all devices
-      const response = await fetch(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
+      const response = await fetchWithTimeout(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
       if (response.ok) {
         const json = await response.json();
         if (json.facilitators && Array.isArray(json.facilitators)) {
