@@ -940,7 +940,8 @@ export default function App() {
       for (const id of keys) {
         const rec = overrides[id];
         try {
-          await fetch(GOOGLE_SHEETS_API_URL, {
+          const cleanRecPayload = stripPhotosFromRecord(rec);
+          await fetchWithTimeout(GOOGLE_SHEETS_API_URL, {
             method: "POST",
             mode: "no-cors",
             headers: {
@@ -948,7 +949,7 @@ export default function App() {
             },
             body: JSON.stringify({
               action: 'syncRecord',
-              data: rec
+              data: cleanRecPayload
             })
           });
           success++;
@@ -1669,7 +1670,7 @@ export default function App() {
     setCloudLoading(true);
     try {
       // Post registration down to Google Sheets database including current parsed device details
-      await fetch(GOOGLE_SHEETS_API_URL, {
+      await fetchWithTimeout(GOOGLE_SHEETS_API_URL, {
         method: "POST",
         mode: "no-cors",
         headers: {
@@ -1729,7 +1730,7 @@ export default function App() {
     
     // Sync status change directly to Google Sheets database (bypassing CORS)
     try {
-      await fetch(GOOGLE_SHEETS_API_URL, {
+      await fetchWithTimeout(GOOGLE_SHEETS_API_URL, {
         method: "POST",
         mode: "no-cors",
         headers: {
@@ -1779,7 +1780,7 @@ export default function App() {
     
     // Delete facilitator from Google Sheets database (bypassing CORS)
     try {
-      await fetch(GOOGLE_SHEETS_API_URL, {
+      await fetchWithTimeout(GOOGLE_SHEETS_API_URL, {
         method: "POST",
         mode: "no-cors",
         headers: {
@@ -2795,7 +2796,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       handleSyncToGoogleSheets(updatedDeletedRecord, true);
 
       // Try to physically delete from Google Sheets if they have updated the Apps Script code
-      fetch(GOOGLE_SHEETS_API_URL, {
+      fetchWithTimeout(GOOGLE_SHEETS_API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
@@ -3161,7 +3162,10 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         statusHistory: Array.isArray(rec.statusHistory) ? JSON.stringify(rec.statusHistory) : (rec.statusHistory || '')
       };
 
-      await fetch(GOOGLE_SHEETS_API_URL, {
+      // Strip heavy base64 image strings from cloud payload so HTTP POST body remains tiny (<2KB text), ensuring ultra-fast sync even on weak 3G networks
+      const cleanFlatRec = stripPhotosFromRecord(flatRec);
+
+      await fetchWithTimeout(GOOGLE_SHEETS_API_URL, {
         method: "POST",
         mode: "no-cors",
         headers: {
@@ -3169,7 +3173,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         },
         body: JSON.stringify({
           action: 'syncRecord',
-          data: flatRec
+          data: cleanFlatRec
         })
       });
       
@@ -3186,8 +3190,8 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         alert(`Berhasil Mengirim Data!\nCatatan pemohon "${rec.namaKlien}" telah disinkronisasikan langsung ke Google Sheets Anda secara real-time.`);
       }
 
-      // Automatically refresh in the background to update client memory
-      await refreshFromCloud(false, true);
+      // Automatically refresh in the background non-blockingly to update client memory
+      refreshFromCloud(false, true).catch(err => console.warn("Background cloud refresh error:", err));
     } catch (err) {
       console.error(err);
       if (silent) {
@@ -3224,7 +3228,9 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           statusHistory: Array.isArray(rec.statusHistory) ? JSON.stringify(rec.statusHistory) : (rec.statusHistory || '')
         };
 
-        await fetch(GOOGLE_SHEETS_API_URL, {
+        const cleanFlatRec = stripPhotosFromRecord(flatRec);
+
+        await fetchWithTimeout(GOOGLE_SHEETS_API_URL, {
           method: "POST",
           mode: "no-cors",
           headers: {
@@ -3232,7 +3238,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           },
           body: JSON.stringify({
             action: 'syncRecord',
-            data: flatRec
+            data: cleanFlatRec
           })
         });
         successCount++;
