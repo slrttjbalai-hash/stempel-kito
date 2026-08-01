@@ -952,6 +952,8 @@ export default function App() {
               data: cleanRecPayload
             })
           });
+          // Remove from offline overrides list since it has been successfully dispatched
+          deleteRecordOverride(id);
           success++;
         } catch (e) {
           console.error("Gagal sinkronisasi data ID:", id, e);
@@ -1070,14 +1072,11 @@ export default function App() {
               const overrides = JSON.parse(savedOver);
               let overridesChanged = false;
               normalized.forEach((cloudRec: any) => {
-                const localRec = overrides[cloudRec.id];
-                if (localRec) {
-                  const matchesStatus = cloudRec.statusKunjungan === localRec.statusKunjungan;
-                  // If the status is processed in cloud, we can safely trust the cloud version now
-                  if (matchesStatus && (cloudRec.tanggalPemeriksaan === localRec.tanggalPemeriksaan || !localRec.tanggalPemeriksaan)) {
-                    delete overrides[cloudRec.id];
-                    overridesChanged = true;
-                  }
+                if (cloudRec && cloudRec.id && overrides[cloudRec.id]) {
+                  // If the record exists in the cloud dataset, it has arrived in Google Sheets.
+                  // We can safely prune the local override so the offline pending count decreases.
+                  delete overrides[cloudRec.id];
+                  overridesChanged = true;
                 }
               });
               if (overridesChanged) {
