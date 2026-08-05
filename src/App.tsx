@@ -230,6 +230,9 @@ function saveRecordOverride(rec: SLRTRecord) {
     const overrides = JSON.parse(saved);
     overrides[rec.id] = stripPhotosFromRecord(rec);
     safeLocalStorageSetItem('slrt_record_overrides', JSON.stringify(overrides));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('slrt_overrides_updated'));
+    }
   } catch (e) {
     console.error("Gagal menyimpan override rekaman lokal:", e);
   }
@@ -249,6 +252,9 @@ function deleteRecordOverride(id: string) {
       cleaned[key] = stripPhotosFromRecord(overrides[key]);
     });
     safeLocalStorageSetItem('slrt_record_overrides', JSON.stringify(cleaned));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('slrt_overrides_updated'));
+    }
   } catch (e) {
     console.error("Gagal menghapus override rekaman lokal:", e);
   }
@@ -860,22 +866,31 @@ export default function App() {
 
   const GOOGLE_SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbx475qL3YoVQoDJQ4vtOIMIpjPforxxnXRm8R8dONc_lpE31ks0PleiQvcDJ7WVwURpog/exec";
 
-  // Helper to fetch with a specified timeout (default 8 seconds) to prevent infinite hanging in poor cellular coverage
-  const fetchWithTimeout = async (resource: string, options: RequestInit & { timeout?: number } = {}) => {
-    const { timeout = 8000, ...rest } = options;
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-    try {
-      const response = await fetch(resource, {
-        ...rest,
-        signal: controller.signal
-      });
-      clearTimeout(id);
-      return response;
-    } catch (error) {
-      clearTimeout(id);
-      throw error;
+  // Helper to fetch with a specified timeout (default 25 seconds) to prevent infinite hanging while giving Google Apps Script enough time to compile 1400+ records
+  const fetchWithTimeout = async (resource: string, options: RequestInit & { timeout?: number; retries?: number } = {}) => {
+    const { timeout = 25000, retries = 1, ...rest } = options;
+    let attempt = 0;
+    while (attempt <= retries) {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeout);
+      try {
+        const response = await fetch(resource, {
+          ...rest,
+          signal: controller.signal
+        });
+        clearTimeout(id);
+        return response;
+      } catch (error) {
+        clearTimeout(id);
+        if (attempt < retries) {
+          attempt++;
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+        throw error;
+      }
     }
+    throw new Error("Fetch failed");
   };
 
   // Reconcile list of facilitators with administrative status overrides
@@ -910,6 +925,17 @@ export default function App() {
   // State for synchronization status
   const [cloudLoading, setCloudLoading] = useState(false);
   const [lastCloudSync, setLastCloudSync] = useState<string | null>(null);
+  const [overridesVersion, setOverridesVersion] = useState(0);
+
+  useEffect(() => {
+    const handleUpdate = () => setOverridesVersion(v => v + 1);
+    window.addEventListener('slrt_overrides_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('slrt_overrides_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, []);
 
   // Count local overrides pending cloud synchronization confirmation
   const unsyncedCount = useMemo(() => {
@@ -921,7 +947,7 @@ export default function App() {
     } catch (e) {
       return 0;
     }
-  }, [records]);
+  }, [records, overridesVersion, cloudLoading]);
 
   // Synchronize all offline changes to Google Sheets
   const handleSyncAllOfflineChanges = async () => {
@@ -1128,10 +1154,14 @@ export default function App() {
           alert("Gagal memuat data dari Google Sheets, menggunakan salinan data lokal.");
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn("Gagal terhubung dengan database cloud Google Sheets, sistem beralih menggunakan basis data lokal offline:", err);
       if (showNotification) {
-        alert("Gagal terhubung ke database pusat Google Sheets. Pastikan koneksi internet aktif, lalu coba kembali.");
+        if (err?.name === 'AbortError') {
+          alert("Koneksi ke Google Sheets membutuhkan waktu lebih lama dari biasanya (Timeout 25 Detik saat memproses 1.400+ data).\n\nSistem tetap berjalan aman menggunakan cache lokal. Silakan coba klik tombol Sinkronisasi lagi.");
+        } else {
+          alert("Gagal terhubung ke database pusat Google Sheets. Pastikan layanan Google Sheets aktif dan coba kembali beberapa saat lagi.");
+        }
       }
     } finally {
       setCloudLoading(false);
