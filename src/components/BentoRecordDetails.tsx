@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { SLRTRecord, getSafeBase64Url } from '../types';
-import { Printer, Calendar, FileText, Clipboard, Check, HelpCircle, ShieldCheck, HeartPulse, Camera, Clock, CheckCircle2, UserCheck, Download, Home, RefreshCw } from 'lucide-react';
+import { Printer, Calendar, FileText, Clipboard, Check, HelpCircle, ShieldCheck, HeartPulse, Camera, Clock, CheckCircle2, UserCheck, Download, Home, RefreshCw, X, ZoomIn, ExternalLink } from 'lucide-react';
 
 interface BentoRecordDetailsProps {
   rec: SLRTRecord;
@@ -30,6 +30,7 @@ export default function BentoRecordDetails({
   onMarkReverification
 }: BentoRecordDetailsProps) {
   const [reverifyNote, setReverifyNote] = React.useState('');
+  const [previewPhotoModal, setPreviewPhotoModal] = useState<{ url: string; title: string } | null>(null);
   
   // Custom helper for status coloring
   const getStatusStyle = (status: string | undefined) => {
@@ -369,13 +370,19 @@ export default function BentoRecordDetails({
            <div className="space-y-1">
              <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight block">1. Bukti Gambar KK / KTP</span>
              {fotoKk ? (
-               <div className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in">
+               <div 
+                 onClick={() => setPreviewPhotoModal({ url: getSafeBase64Url(fotoKk), title: 'Dokumentasi Berkas KK / KTP' })}
+                 className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in hover:border-indigo-400 transition-colors shadow-xs"
+               >
                  <img 
                    src={getSafeBase64Url(fotoKk)} 
                    alt="Foto KK / KTP" 
                    referrerPolicy="no-referrer"
                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-350"
                  />
+                 <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/20 transition-colors flex items-center justify-center">
+                   <ZoomIn className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" />
+                 </div>
                  <span className="absolute bottom-1 right-1 bg-slate-900/65 text-[7px] font-black text-white px-1 py-0.5 rounded uppercase">
                    Dokumen
                  </span>
@@ -392,13 +399,19 @@ export default function BentoRecordDetails({
            <div className="space-y-1">
              <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight block">2. Foto Depan Rumah</span>
              {fotoRumah ? (
-               <div className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in">
+               <div 
+                 onClick={() => setPreviewPhotoModal({ url: getSafeBase64Url(fotoRumah), title: 'Dokumentasi Depan Rumah' })}
+                 className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in hover:border-indigo-400 transition-colors shadow-xs"
+               >
                  <img 
                    src={getSafeBase64Url(fotoRumah)} 
                    alt="Foto Depan Rumah" 
                    referrerPolicy="no-referrer"
                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-350"
                  />
+                 <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/20 transition-colors flex items-center justify-center">
+                   <ZoomIn className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" />
+                 </div>
                  <span className="absolute bottom-1 right-1 bg-slate-900/65 text-[7px] font-black text-white px-1 py-0.5 rounded uppercase">
                    Depan Rumah
                  </span>
@@ -415,13 +428,19 @@ export default function BentoRecordDetails({
            <div className="space-y-1">
              <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight block">3. Foto Kontrol Kunjungan</span>
              {fotoOps ? (
-               <div className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in">
+               <div 
+                 onClick={() => setPreviewPhotoModal({ url: getSafeBase64Url(fotoOps), title: 'Dokumentasi Kontrol Lapangan (Geotag)' })}
+                 className="h-16 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 relative group cursor-zoom-in hover:border-indigo-400 transition-colors shadow-xs"
+               >
                  <img 
                    src={getSafeBase64Url(fotoOps)} 
                    alt="Foto Kontrol Lapangan" 
                    referrerPolicy="no-referrer"
                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-350"
                  />
+                 <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/20 transition-colors flex items-center justify-center">
+                   <ZoomIn className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" />
+                 </div>
                  <span className="absolute bottom-1 right-1 bg-slate-900/65 text-[7px] font-black text-white px-1 py-0.5 rounded uppercase">
                    Ops Lapangan
                  </span>
@@ -705,6 +724,62 @@ export default function BentoRecordDetails({
         </div>
       </div>
 
+    
+      {/* FULL-SIZE PHOTO VIEWER LIGHTBOX MODAL */}
+      {previewPhotoModal && (
+        <div 
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setPreviewPhotoModal(null)}
+        >
+          <div 
+            className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-900/90">
+              <div className="flex items-center gap-2.5">
+                <Camera className="w-4 h-4 text-indigo-400" />
+                <h4 className="text-sm font-bold text-slate-200 truncate">
+                  {previewPhotoModal.title}
+                </h4>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewPhotoModal.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  download="dokumentasi_kunjungan.jpg"
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1 text-xs font-semibold"
+                  title="Unduh Foto / Buka Asli"
+                >
+                  <Download className="w-4 h-4" />
+                  <span className="hidden sm:inline">Unduh</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewPhotoModal(null)}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-slate-950/60 min-h-[300px]">
+              <img 
+                src={previewPhotoModal.url} 
+                alt={previewPhotoModal.title}
+                referrerPolicy="no-referrer"
+                className="max-h-[70vh] max-w-full object-contain rounded-lg shadow-lg"
+              />
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between text-xs text-slate-400">
+              <span>Klien: <strong className="text-slate-200">{rec.namaKlien}</strong></span>
+              <span>NIK: <strong className="text-slate-200 font-mono">{rec.id}</strong></span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

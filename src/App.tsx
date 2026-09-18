@@ -184,8 +184,16 @@ function stripPhotosFromRecord(rec: any): any {
     'dokumentasiBukti', 'dokumentasibukti', 'dokumentasi_bukti', 'dokumentasi', 'fotoOps', 'foto_ops', 'foto_ops_url'
   ];
   keysToClean.forEach(key => {
-    if (stripped[key] && typeof stripped[key] === 'string' && stripped[key].length > 150) {
-      stripped[key] = '';
+    const val = stripped[key];
+    if (val && typeof val === 'string') {
+      // Keep valid HTTP/HTTPS URLs (like Google Drive links or Cloud URLs)
+      if (val.startsWith('http://') || val.startsWith('https://')) {
+        return;
+      }
+      // Only strip raw base64 / large data URLs to save localStorage quota
+      if (val.startsWith('data:image') || val.length > 250) {
+        stripped[key] = '';
+      }
     }
   });
   return stripped;
@@ -410,15 +418,15 @@ function normalizeRecord(rec: any): SLRTRecord {
       const updatePayload: any = {};
       const cacheVal = photosArchiveCache[id];
 
-      if (fotoKkKtp && fotoKkKtp.length > 150 && (!cacheVal || cacheVal.fotoKkKtp !== fotoKkKtp)) {
+      if (fotoKkKtp && (!cacheVal || cacheVal.fotoKkKtp !== fotoKkKtp)) {
         updatePayload.fotoKkKtp = fotoKkKtp;
         needsSave = true;
       }
-      if (fotoDepanRumah && fotoDepanRumah.length > 150 && (!cacheVal || cacheVal.fotoDepanRumah !== fotoDepanRumah)) {
+      if (fotoDepanRumah && (!cacheVal || cacheVal.fotoDepanRumah !== fotoDepanRumah)) {
         updatePayload.fotoDepanRumah = fotoDepanRumah;
         needsSave = true;
       }
-      if (dokumentasiBukti && dokumentasiBukti.length > 150 && (!cacheVal || cacheVal.dokumentasiBukti !== dokumentasiBukti)) {
+      if (dokumentasiBukti && (!cacheVal || cacheVal.dokumentasiBukti !== dokumentasiBukti)) {
         updatePayload.dokumentasiBukti = dokumentasiBukti;
         needsSave = true;
       }
@@ -966,7 +974,21 @@ export default function App() {
       for (const id of keys) {
         const rec = overrides[id];
         try {
-          const cleanRecPayload = stripPhotosFromRecord(rec);
+          const archivePhotos = photosArchiveCache[id];
+          const fotoKk = rec.fotoKkKtp || rec.foto_ktp_url || archivePhotos?.fotoKkKtp || '';
+          const fotoRumah = rec.fotoDepanRumah || rec.foto_hunian_url || archivePhotos?.fotoDepanRumah || '';
+          const fotoBukti = rec.dokumentasiBukti || rec.fotoOps || archivePhotos?.dokumentasiBukti || '';
+
+          const payload = {
+            ...rec,
+            fotoKkKtp: fotoKk,
+            foto_ktp_url: fotoKk,
+            fotoDepanRumah: fotoRumah,
+            foto_hunian_url: fotoRumah,
+            dokumentasiBukti: fotoBukti,
+            fotoOps: fotoBukti
+          };
+
           await fetchWithTimeout(GOOGLE_SHEETS_API_URL, {
             method: "POST",
             mode: "no-cors",
@@ -975,7 +997,7 @@ export default function App() {
             },
             body: JSON.stringify({
               action: 'syncRecord',
-              data: cleanRecPayload
+              data: payload
             })
           });
           // Remove from offline overrides list since it has been successfully dispatched
@@ -2635,6 +2657,11 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
 
     // Auto-sync the verified visitation fields back to the Google Sheets central database
     if (compiledRecordForSync) {
+      saveToArchive(selectedVerifierRecord.id, {
+        fotoKkKtp: verifierFotoKkKtp,
+        fotoDepanRumah: verifierFotoDepanRumah,
+        dokumentasiBukti: verifierPhoto
+      });
       saveRecordOverride(compiledRecordForSync);
       handleSyncToGoogleSheets(compiledRecordForSync, true);
     }
@@ -3183,16 +3210,24 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       setSyncingTargetName(rec.namaKlien);
     }
     try {
+      const archivePhotos = photosArchiveCache[rec.id];
+      const fotoKk = rec.fotoKkKtp || rec.foto_ktp_url || archivePhotos?.fotoKkKtp || '';
+      const fotoRumah = rec.fotoDepanRumah || rec.foto_hunian_url || archivePhotos?.fotoDepanRumah || '';
+      const fotoBukti = rec.dokumentasiBukti || rec.fotoOps || archivePhotos?.dokumentasiBukti || '';
+
       const flatRec = {
         ...rec,
         indikatorSosialEkonomi: Array.isArray(rec.indikatorSosialEkonomi) ? rec.indikatorSosialEkonomi.join('; ') : (rec.indikatorSosialEkonomi || ''),
         kelayakanHuni: Array.isArray(rec.kelayakanHuni) ? rec.kelayakanHuni.join('; ') : (rec.kelayakanHuni || ''),
         bantuanDiterimaList: Array.isArray(rec.bantuanDiterimaList) ? rec.bantuanDiterimaList.join('; ') : (rec.bantuanDiterimaList || ''),
-        statusHistory: Array.isArray(rec.statusHistory) ? JSON.stringify(rec.statusHistory) : (rec.statusHistory || '')
+        statusHistory: Array.isArray(rec.statusHistory) ? JSON.stringify(rec.statusHistory) : (rec.statusHistory || ''),
+        fotoKkKtp: fotoKk,
+        foto_ktp_url: fotoKk,
+        fotoDepanRumah: fotoRumah,
+        foto_hunian_url: fotoRumah,
+        dokumentasiBukti: fotoBukti,
+        fotoOps: fotoBukti
       };
-
-      // Strip heavy base64 image strings from cloud payload so HTTP POST body remains tiny (<2KB text), ensuring ultra-fast sync even on weak 3G networks
-      const cleanFlatRec = stripPhotosFromRecord(flatRec);
 
       await fetchWithTimeout(GOOGLE_SHEETS_API_URL, {
         method: "POST",
@@ -3202,15 +3237,12 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         },
         body: JSON.stringify({
           action: 'syncRecord',
-          data: cleanFlatRec
+          data: flatRec
         })
       });
       
-      // Note: Do NOT delete the local override immediately here, because the next immediate
-      // refreshFromCloud might not have the brand new sheet record updated yet (causing a race condition
-      // where the record disappears). Instead, let refreshFromCloud safely prune the override
-      // automatically only when it detects that the record actively exists in the fetched cloud payload.
-      // deleteRecordOverride(rec.id);
+      // Remove from offline pending queue since it has been dispatched to Google Sheets
+      deleteRecordOverride(rec.id);
 
       if (silent) {
         setBackgroundSyncStatus('success');
@@ -3219,15 +3251,17 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
         alert(`Berhasil Mengirim Data!\nCatatan pemohon "${rec.namaKlien}" telah disinkronisasikan langsung ke Google Sheets Anda secara real-time.`);
       }
 
-      // Automatically refresh in the background non-blockingly to update client memory
-      refreshFromCloud(false, true).catch(err => console.warn("Background cloud refresh error:", err));
+      // Refresh cloud data non-blockingly after 5 seconds to avoid Google Apps Script lock collisions
+      setTimeout(() => {
+        refreshFromCloud(false, true).catch(err => console.warn("Background cloud refresh error:", err));
+      }, 5000);
     } catch (err) {
-      console.error(err);
+      console.error("Gagal sinkronisasi ke Google Sheets:", err);
       if (silent) {
         setBackgroundSyncStatus('error');
         setTimeout(() => setBackgroundSyncStatus('idle'), 4000);
       } else {
-        alert("Gagal mensinkronisasikan data ke Google Sheets. Silakan periksa koneksi jaringan Anda.");
+        alert("Data tersimpan aman di penyimpanan lokal (Mode Luring). Koneksi Google Sheets sedang sibuk, data akan tersinkron otomatis.");
       }
     } finally {
       setSyncingRecordId(null);
@@ -3249,15 +3283,24 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     
     for (const rec of records) {
       try {
+        const archivePhotos = photosArchiveCache[rec.id];
+        const fotoKk = rec.fotoKkKtp || rec.foto_ktp_url || archivePhotos?.fotoKkKtp || '';
+        const fotoRumah = rec.fotoDepanRumah || rec.foto_hunian_url || archivePhotos?.fotoDepanRumah || '';
+        const fotoBukti = rec.dokumentasiBukti || rec.fotoOps || archivePhotos?.dokumentasiBukti || '';
+
         const flatRec = {
           ...rec,
           indikatorSosialEkonomi: Array.isArray(rec.indikatorSosialEkonomi) ? rec.indikatorSosialEkonomi.join('; ') : (rec.indikatorSosialEkonomi || ''),
           kelayakanHuni: Array.isArray(rec.kelayakanHuni) ? rec.kelayakanHuni.join('; ') : (rec.kelayakanHuni || ''),
           bantuanDiterimaList: Array.isArray(rec.bantuanDiterimaList) ? rec.bantuanDiterimaList.join('; ') : (rec.bantuanDiterimaList || ''),
-          statusHistory: Array.isArray(rec.statusHistory) ? JSON.stringify(rec.statusHistory) : (rec.statusHistory || '')
+          statusHistory: Array.isArray(rec.statusHistory) ? JSON.stringify(rec.statusHistory) : (rec.statusHistory || ''),
+          fotoKkKtp: fotoKk,
+          foto_ktp_url: fotoKk,
+          fotoDepanRumah: fotoRumah,
+          foto_hunian_url: fotoRumah,
+          dokumentasiBukti: fotoBukti,
+          fotoOps: fotoBukti
         };
-
-        const cleanFlatRec = stripPhotosFromRecord(flatRec);
 
         await fetchWithTimeout(GOOGLE_SHEETS_API_URL, {
           method: "POST",
@@ -3267,7 +3310,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
           },
           body: JSON.stringify({
             action: 'syncRecord',
-            data: cleanFlatRec
+            data: flatRec
           })
         });
         successCount++;
@@ -7818,7 +7861,7 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
             <p className="text-[11px] font-bold text-slate-100 mt-1 leading-tight truncate">
               {backgroundSyncStatus === 'syncing' && `Mengirim data "${syncingTargetName}" ke Google Sheets...`}
               {backgroundSyncStatus === 'success' && `Data "${syncingTargetName}" tersimpan otomatis!`}
-              {backgroundSyncStatus === 'error' && `Koneksi Google Sheets terputus!`}
+              {backgroundSyncStatus === 'error' && `Data "${syncingTargetName}" tersimpan luring (Akan disinkron ulang)`}
             </p>
           </div>
         </div>

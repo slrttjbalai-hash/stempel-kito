@@ -30,6 +30,7 @@ export interface SLRTRecord {
   namaPendata?: string; // Nama petugas pendata lapangan
   fotoKkKtp?: string; // Foto KK / KTP
   fotoDepanRumah?: string; // Foto Depan Rumah
+  fotoOps?: string; // Foto Operasional Lapangan / Kontrol
   
   // Field Application Database Compatibility Fields
   foto_hunian_url?: string;
@@ -348,7 +349,13 @@ export const getSafeBase64Url = (srcUrl: string | undefined): string => {
   if (trimmed.startsWith('iVBORw0KGgo')) {
     return `data:image/png;base64,${trimmed}`;
   }
-  return `data:image/jpeg;base64,${trimmed}`;
+  if (trimmed.startsWith('/9j/')) {
+    return `data:image/jpeg;base64,${trimmed}`;
+  }
+  if (trimmed.length > 50 && /^[A-Za-z0-9+/=]+$/.test(trimmed.slice(0, 50))) {
+    return `data:image/jpeg;base64,${trimmed}`;
+  }
+  return trimmed;
 };
 
 export const KRITERIA_SOSIAL_EKONOMI = [

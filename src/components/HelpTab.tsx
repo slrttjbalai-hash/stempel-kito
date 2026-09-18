@@ -805,6 +805,46 @@ function deleteRecord(id) {
   return { status: "error", message: "Laporan ID " + id + " tidak ditemukan" };
 }
 
+// Helper untuk mengunggah dan menyimpan foto base64 ke folder Google Drive & mengembalikan link gambar
+function saveBase64ToDrive(base64Data, filenamePrefix, clientId) {
+  if (!base64Data || typeof base64Data !== 'string') return "";
+  var trimmed = base64Data.trim();
+  if (trimmed.indexOf("http://") === 0 || trimmed.indexOf("https://") === 0) {
+    return trimmed; // Sudah berupa URL gambar online
+  }
+  if (trimmed.indexOf("data:image") === -1 && trimmed.indexOf("base64,") === -1 && trimmed.length < 200) {
+    return trimmed;
+  }
+  try {
+    var folderName = "DOKUMENTASI_KUNJUNGAN_SLRT";
+    var folders = DriveApp.getFoldersByName(folderName);
+    var folder;
+    if (folders.hasNext()) {
+      folder = folders.next();
+    } else {
+      folder = DriveApp.createFolder(folderName);
+      folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    }
+    
+    var contentType = "image/jpeg";
+    var base64Content = trimmed;
+    if (trimmed.indexOf("data:") === 0) {
+      var parts = trimmed.split(";base64,");
+      contentType = parts[0].replace("data:", "");
+      base64Content = parts[1];
+    }
+    var decoded = Utilities.base64Decode(base64Content);
+    var blob = Utilities.newBlob(decoded, contentType, filenamePrefix + "_" + clientId + "_" + new Date().getTime() + ".jpg");
+    var file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    
+    return "https://lh3.googleusercontent.com/d/" + file.getId();
+  } catch (err) {
+    Logger.log("Error saveBase64ToDrive: " + err);
+    return "";
+  }
+}
+
 // Sinkronisasi Catatan Laporan Pengaduan secara dinamis (Aktif vs Arsip)
 function syncRecord(data) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -840,8 +880,9 @@ function syncRecord(data) {
     }
   }
   
-  const fotoKk = data.fotoKkKtp || data.foto_ktp_url || "";
-  const fotoHunian = data.fotoDepanRumah || data.foto_hunian_url || "";
+  const fotoKk = saveBase64ToDrive(data.fotoKkKtp || data.foto_ktp_url || "", "KK_KTP", targetId);
+  const fotoHunian = saveBase64ToDrive(data.fotoDepanRumah || data.foto_hunian_url || "", "RUMAH", targetId);
+  const fotoBukti = saveBase64ToDrive(data.dokumentasiBukti || data.fotoOps || "", "KONTROL", targetId);
   const catatan = data.catatanPemeriksa || data.catatan_pendata || "-";
   
   const rowData = [
@@ -870,7 +911,7 @@ function syncRecord(data) {
     data.namaPendata || data.namaFasilitator || "",
     fotoKk,
     fotoHunian,
-    data.dokumentasiBukti || ""
+    fotoBukti
   ];
   
   if (foundRowTarget !== -1) {
