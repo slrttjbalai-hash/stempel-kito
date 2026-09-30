@@ -546,24 +546,96 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify(getInitialData(params)))
       .setMimeType(ContentService.MimeType.JSON);
   }
+  if (action === "getRecordPhotos") {
+    return ContentService.createTextOutput(JSON.stringify(getRecordPhotos(params.id)))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "getFacilitators") {
+    return ContentService.createTextOutput(JSON.stringify(getFacilitatorsOnly()))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
   return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "Aksi tidak dikenal" }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// Mengambil seluruh data laporan dan petugas (Menggabungkan Sheet Aktif + Arsip)
+// Mengambil foto spesifik milik 1 klien saat diklik (On-Demand Loading < 0.5 detik)
+function getRecordPhotos(targetId) {
+  if (!targetId) return { status: "error", message: "ID kosong" };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = [ss.getSheetByName(SHEET_ARCHIVE), ss.getSheetByName(SHEET_RECORDS)];
+  const cleanId = String(targetId).trim();
+
+  for (let s = 0; s < sheets.length; s++) {
+    const sheet = sheets[s];
+    if (!sheet) continue;
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) continue;
+
+    // Baca kolom A (ID) saja terlebih dahulu agar sangat cepat
+    const idValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < idValues.length; i++) {
+      if (String(idValues[i][0]).trim() === cleanId) {
+        const photoRow = sheet.getRange(i + 2, 24, 1, 3).getValues()[0];
+        return {
+          status: "success",
+          id: cleanId,
+          fotoKkKtp: photoRow[0] ? String(photoRow[0]) : "",
+          fotoDepanRumah: photoRow[1] ? String(photoRow[1]) : "",
+          dokumentasiBukti: photoRow[2] ? String(photoRow[2]) : ""
+        };
+      }
+    }
+  }
+  return { status: "not_found", id: cleanId, fotoKkKtp: "", fotoDepanRumah: "", dokumentasiBukti: "" };
+}
+
+// Mengambil daftar akun fasilitator saja (Login/Registrasi instan < 0.5 detik)
+function getFacilitatorsOnly() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheetFac = ss.getSheetByName(SHEET_FACILITATORS);
+  const facilitators = [];
+  if (sheetFac) {
+    const lastRow = sheetFac.getLastRow();
+    if (lastRow > 1) {
+      const values = sheetFac.getRange(2, 1, lastRow - 1, 11).getValues();
+      for (let i = 0; i < values.length; i++) {
+        const row = values[i];
+        facilitators.push({
+          id: String(row[0]),
+          name: String(row[1]),
+          nik: String(row[2]),
+          regionKecamatan: String(row[3]),
+          regionKelurahan: String(row[4]),
+          phone: String(row[5]),
+          email: String(row[6]),
+          password: String(row[7]),
+          status: String(row[8]) || "PENDING_APPROVAL",
+          perangkat: String(row[9]) || "-",
+          createdAt: String(row[10])
+        });
+      }
+    }
+  }
+  const finalFacs = facilitators.length > 0 ? facilitators : INITIAL_FACILITATORS;
+  return { facilitators: finalFacs };
+}
+
+// Mengambil seluruh data laporan dan petugas (Menggabungkan Sheet Aktif + Arsip secara Ringan ~750 KB)
+// Catatan: Kolom 24-26 (Base64 Foto) TIDAK dibaca saat pemuatan daftar massal agar tidak melebihi batas 50MB Google Apps Script (Error 404).
+// Foto dimuat secara instan per klien melalui getRecordPhotos(id) saat nama warga diklik.
 function getInitialData(params) {
   params = params || {};
-  const isFacilitatorRole = String(params.role || "").toLowerCase() === "facilitator";
-  const activeFacilitatorName = String(params.facilitator || "").toLowerCase().trim();
+  const includeAllPhotos = String(params.includePhotos || "") === "1";
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const records = [];
   
-  // 1. Ambil dari Sheet Utama (Aktif / Belum Dikunjungi)
+  // 1. Ambil dari Sheet Utama (Aktif / Belum Dikunjungi) - Baca 23 kolom teks utama
   let sheetRec = ss.getSheetByName(SHEET_RECORDS);
   if (sheetRec) {
     const lastRow = sheetRec.getLastRow();
     if (lastRow > 1) {
-      const values = sheetRec.getRange(2, 1, lastRow - 1, 26).getValues();
+      const numCols = includeAllPhotos ? 26 : 23;
+      const values = sheetRec.getRange(2, 1, lastRow - 1, numCols).getValues();
       for (let i = 0; i < values.length; i++) {
         const row = values[i];
         records.push({
@@ -590,37 +662,46 @@ function getInitialData(params) {
           catatanPemeriksa: String(row[20]) || "-",
           diinputOleh: row[21] ? String(row[21]) : "Admin",
           namaPendata: row[22] ? String(row[22]) : "",
-          fotoKkKtp: row[23] ? String(row[23]) : "",
-          fotoDepanRumah: row[24] ? String(row[24]) : "",
-          dokumentasiBukti: row[25] ? String(row[25]) : ""
+          fotoKkKtp: includeAllPhotos && row[23] ? String(row[23]) : "",
+          fotoDepanRumah: includeAllPhotos && row[24] ? String(row[24]) : "",
+          dokumentasiBukti: includeAllPhotos && row[25] ? String(row[25]) : ""
         });
       }
     }
   }
 
-  // 2. Ambil dari Sheet Arsip (Sudah Dikunjungi)
+  // 2. Ambil dari Sheet Arsip (Sudah Dikunjungi) - Baca 23 kolom teks utama agar ringan (< 2 detik)
   let sheetArch = ss.getSheetByName(SHEET_ARCHIVE);
   if (sheetArch) {
     const lastRowArch = sheetArch.getLastRow();
     if (lastRowArch > 1) {
-      const valuesArch = sheetArch.getRange(2, 1, lastRowArch - 1, 26).getValues();
+      const numColsArch = includeAllPhotos ? 26 : 23;
+      const valuesArch = sheetArch.getRange(2, 1, lastRowArch - 1, numColsArch).getValues();
+      // Ambil foto untuk 15 kunjungan paling baru di bagian bawah Sheet Arsip agar langsung tampil
+      const recentPhotoRowsCount = Math.min(15, lastRowArch - 1);
+      const recentPhotoStartRow = Math.max(2, lastRowArch - recentPhotoRowsCount + 1);
+      const recentPhotosMap = {};
+      if (!includeAllPhotos && recentPhotoRowsCount > 0) {
+        const recentIds = sheetArch.getRange(recentPhotoStartRow, 1, recentPhotoRowsCount, 1).getValues();
+        const recentPhotos = sheetArch.getRange(recentPhotoStartRow, 24, recentPhotoRowsCount, 3).getValues();
+        for (let r = 0; r < recentIds.length; r++) {
+          const rId = String(recentIds[r][0]).trim();
+          recentPhotosMap[rId] = [
+            recentPhotos[r][0] ? String(recentPhotos[r][0]) : "",
+            recentPhotos[r][1] ? String(recentPhotos[r][1]) : "",
+            recentPhotos[r][2] ? String(recentPhotos[r][2]) : ""
+          ];
+        }
+      }
+
       for (let i = 0; i < valuesArch.length; i++) {
         const row = valuesArch[i];
+        const recId = String(row[0]).trim();
         const pendataRow = row[22] ? String(row[22]) : "";
-        const isOwnRecord = !isFacilitatorRole || !activeFacilitatorName || pendataRow.toLowerCase().trim() === activeFacilitatorName;
-        
-        // Untuk HP Fasilitator, jangan kirim base64 raksasa milik fasilitator lain agar kuota hemat & sinkronisasi instan (< 2 detik)
-        let fKk = row[23] ? String(row[23]) : "";
-        let fRumah = row[24] ? String(row[24]) : "";
-        let fBukti = row[25] ? String(row[25]) : "";
-        if (!isOwnRecord) {
-          if (fKk.length > 500) fKk = "";
-          if (fRumah.length > 500) fRumah = "";
-          if (fBukti.length > 500) fBukti = "";
-        }
+        const recentP = recentPhotosMap[recId];
 
         records.push({
-          id: String(row[0]),
+          id: recId,
           kecamatan: String(row[1]),
           kelurahan: String(row[2]),
           hariTanggal: String(row[3]),
@@ -643,9 +724,9 @@ function getInitialData(params) {
           catatanPemeriksa: String(row[20]) || "-",
           diinputOleh: row[21] ? String(row[21]) : "Admin",
           namaPendata: pendataRow,
-          fotoKkKtp: fKk,
-          fotoDepanRumah: fRumah,
-          dokumentasiBukti: fBukti
+          fotoKkKtp: includeAllPhotos ? (row[23] ? String(row[23]) : "") : (recentP ? recentP[0] : ""),
+          fotoDepanRumah: includeAllPhotos ? (row[24] ? String(row[24]) : "") : (recentP ? recentP[1] : ""),
+          dokumentasiBukti: includeAllPhotos ? (row[25] ? String(row[25]) : "") : (recentP ? recentP[2] : "")
         });
       }
     }

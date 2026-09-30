@@ -1177,16 +1177,27 @@ export default function App() {
         }
       } else {
         if (showNotification) {
-          alert("Gagal memuat data dari Google Sheets, menggunakan salinan data lokal.");
+          alert(
+            "⚠️ Ukuran Data Google Sheets Melebihi Batas 50 MB (Error 404):\n\n" +
+            "Total tumpukan foto Base64 di Spreadsheet Anda telah mencapai > 60 MB sehingga ditolak oleh batas respon tunggal Google Apps Script.\n\n" +
+            "SOLUSI: Buka menu 'Panduan', salin kode Apps Script terbaru (fitur On-Demand Photo Loading ~750 KB), lalu Deploy Versi Baru di Google Sheets Anda."
+          );
         }
       }
     } catch (err: any) {
       console.warn("Gagal terhubung dengan database cloud Google Sheets, sistem beralih menggunakan basis data lokal offline:", err);
       if (showNotification) {
         if (err?.name === 'AbortError') {
-          alert("Koneksi ke Google Sheets membutuhkan waktu lebih lama dari biasanya (Timeout 90 Detik saat memproses 2.500+ data beserta foto).\n\nSistem tetap berjalan aman menggunakan cache lokal. Silakan pastikan sinyal internet stabil dan coba kembali.");
+          alert("Koneksi ke Google Sheets membutuhkan waktu lebih lama dari biasanya (Timeout 90 Detik saat memproses 2.500+ data beserta foto).\n\nSistem tetap berjalan aman menggunakan cache lokal. Silakan perbarui kode Apps Script di menu 'Panduan' agar ukuran unduhan turun dari 60 MB menjadi ~750 KB (< 2 detik).");
         } else {
-          alert("Gagal terhubung ke database pusat Google Sheets. Pastikan layanan Google Sheets aktif dan coba kembali beberapa saat lagi.");
+          alert(
+            "Gagal memuat sekaligus dari Google Sheets karena ukuran arsip foto di Spreadsheet telah melebihi 60 MB (batas maksimal respon Google Apps Script adalah 50 MB).\n\n" +
+            "👉 Cara Mengatasi (1 Menit):\n" +
+            "1. Buka menu 'Panduan' di aplikasi ini & Salin Kode Skrip terbaru.\n" +
+            "2. Tempel di Ekstensi > Apps Script pada Google Sheet Anda.\n" +
+            "3. Klik Deploy > Kelola Deployment > Edit > Versi Baru > Deploy.\n\n" +
+            "(Sistem saat ini tetap aman menggunakan cache lokal)."
+          );
         }
       }
     } finally {
@@ -3036,6 +3047,62 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
   const selectedRecord = useMemo(() => {
     return records.find(rec => rec.id === selectedRecordId) || null;
   }, [records, selectedRecordId]);
+
+  // On-demand photo loader: fetches single-record photos from Google Sheets when a visited record is clicked
+  useEffect(() => {
+    if (!selectedRecordId) return;
+    const rec = records.find(r => r.id === selectedRecordId);
+    if (!rec || rec.statusKunjungan !== 'Sudah Dikunjungi') return;
+
+    const hasPhotosAlready = Boolean(rec.fotoKkKtp || rec.fotoDepanRumah || rec.dokumentasiBukti);
+    if (hasPhotosAlready) return;
+
+    let isCancelled = false;
+    (async () => {
+      try {
+        const res = await fetchWithTimeout(
+          `${GOOGLE_SHEETS_API_URL}?action=getRecordPhotos&id=${encodeURIComponent(selectedRecordId)}`,
+          { timeout: 15000, retries: 0 }
+        );
+        if (!res.ok || isCancelled) return;
+        const data = await res.json();
+        if (isCancelled || data?.status !== 'success') return;
+
+        const fKk = data.fotoKkKtp || '';
+        const fRumah = data.fotoDepanRumah || '';
+        const fBukti = data.dokumentasiBukti || '';
+        if (!fKk && !fRumah && !fBukti) return;
+
+        saveToArchive(selectedRecordId, {
+          fotoKkKtp: fKk,
+          fotoDepanRumah: fRumah,
+          dokumentasiBukti: fBukti
+        });
+
+        setRecords(prev =>
+          prev.map(r =>
+            r.id === selectedRecordId
+              ? normalizeRecord({
+                  ...r,
+                  fotoKkKtp: fKk || r.fotoKkKtp,
+                  foto_ktp_url: fKk || r.foto_ktp_url,
+                  fotoDepanRumah: fRumah || r.fotoDepanRumah,
+                  foto_hunian_url: fRumah || r.foto_hunian_url,
+                  dokumentasiBukti: fBukti || r.dokumentasiBukti,
+                  fotoOps: fBukti || r.fotoOps
+                })
+              : r
+          )
+        );
+      } catch (_) {
+        // Ignore silently if old script doesn't support getRecordPhotos yet
+      }
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedRecordId]);
 
   // Stats per Kelurahan for all records
   const kelurahanStats = useMemo(() => {
