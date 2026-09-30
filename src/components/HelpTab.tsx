@@ -540,9 +540,10 @@ function autofitAndStyleRows() {
 
 // Webhook GET API untuk menerima query data inisiasi awal
 function doGet(e) {
-  const action = e.parameter.action;
+  const params = (e && e.parameter) ? e.parameter : {};
+  const action = params.action;
   if (action === "getInitialData") {
-    return ContentService.createTextOutput(JSON.stringify(getInitialData()))
+    return ContentService.createTextOutput(JSON.stringify(getInitialData(params)))
       .setMimeType(ContentService.MimeType.JSON);
   }
   return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "Aksi tidak dikenal" }))
@@ -550,7 +551,10 @@ function doGet(e) {
 }
 
 // Mengambil seluruh data laporan dan petugas (Menggabungkan Sheet Aktif + Arsip)
-function getInitialData() {
+function getInitialData(params) {
+  params = params || {};
+  const isFacilitatorRole = String(params.role || "").toLowerCase() === "facilitator";
+  const activeFacilitatorName = String(params.facilitator || "").toLowerCase().trim();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const records = [];
   
@@ -602,6 +606,19 @@ function getInitialData() {
       const valuesArch = sheetArch.getRange(2, 1, lastRowArch - 1, 26).getValues();
       for (let i = 0; i < valuesArch.length; i++) {
         const row = valuesArch[i];
+        const pendataRow = row[22] ? String(row[22]) : "";
+        const isOwnRecord = !isFacilitatorRole || !activeFacilitatorName || pendataRow.toLowerCase().trim() === activeFacilitatorName;
+        
+        // Untuk HP Fasilitator, jangan kirim base64 raksasa milik fasilitator lain agar kuota hemat & sinkronisasi instan (< 2 detik)
+        let fKk = row[23] ? String(row[23]) : "";
+        let fRumah = row[24] ? String(row[24]) : "";
+        let fBukti = row[25] ? String(row[25]) : "";
+        if (!isOwnRecord) {
+          if (fKk.length > 500) fKk = "";
+          if (fRumah.length > 500) fRumah = "";
+          if (fBukti.length > 500) fBukti = "";
+        }
+
         records.push({
           id: String(row[0]),
           kecamatan: String(row[1]),
@@ -625,10 +642,10 @@ function getInitialData() {
           tanggalPemeriksaan: String(row[19]) || "-",
           catatanPemeriksa: String(row[20]) || "-",
           diinputOleh: row[21] ? String(row[21]) : "Admin",
-          namaPendata: row[22] ? String(row[22]) : "",
-          fotoKkKtp: row[23] ? String(row[23]) : "",
-          fotoDepanRumah: row[24] ? String(row[24]) : "",
-          dokumentasiBukti: row[25] ? String(row[25]) : ""
+          namaPendata: pendataRow,
+          fotoKkKtp: fKk,
+          fotoDepanRumah: fRumah,
+          dokumentasiBukti: fBukti
         });
       }
     }

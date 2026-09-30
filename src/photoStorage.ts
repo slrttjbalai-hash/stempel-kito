@@ -20,12 +20,19 @@ const DB_VERSION = 1;
 // Penyimpanan cache dalam memori untuk operasi sinkron yang sangat cepat (seperti pengubahan item list grid)
 export const photosArchiveCache: Record<string, ArchivePhotoData> = {};
 
+let dbInstancePromise: Promise<IDBDatabase> | null = null;
+let pendingWrites: Record<string, ArchivePhotoData> = {};
+let flushTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
 /**
- * Membuka koneksi ke IndexedDB secara mandiri dengan toleransi kegagalan.
+ * Membuka koneksi ke IndexedDB secara mandiri (singleton) dengan toleransi kegagalan.
  */
 export function openPhotosDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (dbInstancePromise) return dbInstancePromise;
+
+  dbInstancePromise = new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
+      dbInstancePromise = null;
       reject(new Error('IndexedDB tidak didukung oleh browser Anda.'));
       return;
     }
@@ -39,13 +46,22 @@ export function openPhotosDB(): Promise<IDBDatabase> {
     };
     
     request.onsuccess = (event) => {
-      resolve((event.target as IDBOpenDBRequest).result);
+      const db = (event.target as IDBOpenDBRequest).result;
+      db.onclose = () => { dbInstancePromise = null; };
+      db.onversionchange = () => {
+        db.close();
+        dbInstancePromise = null;
+      };
+      resolve(db);
     };
     
     request.onerror = (event) => {
+      dbInstancePromise = null;
       reject((event.target as IDBOpenDBRequest).error);
     };
   });
+
+  return dbInstancePromise;
 }
 
 /**
@@ -111,19 +127,34 @@ export async function saveToArchive(id: string, photoData: Partial<ArchivePhotoD
 
   // Simpan ke in-memory cache instan
   photosArchiveCache[id] = updated;
+  pendingWrites[id] = updated;
 
-  // Persist secara asinkron di latar belakang ke IndexedDB
-  try {
-    const db = await openPhotosDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    store.put({
-      id,
-      ...updated
-    });
-  } catch (err) {
-    console.error(`Gagal menyimpan foto ID ${id} ke dalam IndexedDB:`, err);
+  if (flushTimeoutId) {
+    clearTimeout(flushTimeoutId);
   }
+
+  flushTimeoutId = setTimeout(async () => {
+    const batch = { ...pendingWrites };
+    pendingWrites = {};
+    flushTimeoutId = null;
+
+    const ids = Object.keys(batch);
+    if (ids.length === 0) return;
+
+    try {
+      const db = await openPhotosDB();
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      for (const recId of ids) {
+        store.put({
+          id: recId,
+          ...batch[recId]
+        });
+      }
+    } catch (err) {
+      console.error('Gagal menyimpan batch foto ke dalam IndexedDB:', err);
+    }
+  }, 150);
 }
 
 /**

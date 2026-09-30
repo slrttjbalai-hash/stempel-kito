@@ -1042,7 +1042,9 @@ export default function App() {
       setSelectedRecordId(null);
       
       // Pull fresh data
-      const response = await fetchWithTimeout(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
+      const roleParam = encodeURIComponent(userRole || 'admin');
+      const facParam = encodeURIComponent(session?.name || '');
+      const response = await fetchWithTimeout(`${GOOGLE_SHEETS_API_URL}?action=getInitialData&role=${roleParam}&facilitator=${facParam}`);
       if (response.ok) {
         const json = await response.json();
         if (json.records && Array.isArray(json.records)) {
@@ -1094,7 +1096,9 @@ export default function App() {
       setCloudLoading(true);
     }
     try {
-      const response = await fetchWithTimeout(`${GOOGLE_SHEETS_API_URL}?action=getInitialData`);
+      const roleParam = encodeURIComponent(userRole || 'admin');
+      const facParam = encodeURIComponent(session?.name || '');
+      const response = await fetchWithTimeout(`${GOOGLE_SHEETS_API_URL}?action=getInitialData&role=${roleParam}&facilitator=${facParam}`);
       if (response.ok) {
         const json = await response.json();
         if (json.records && Array.isArray(json.records)) {
@@ -1180,7 +1184,7 @@ export default function App() {
       console.warn("Gagal terhubung dengan database cloud Google Sheets, sistem beralih menggunakan basis data lokal offline:", err);
       if (showNotification) {
         if (err?.name === 'AbortError') {
-          alert("Koneksi ke Google Sheets membutuhkan waktu lebih lama dari biasanya (Timeout 25 Detik saat memproses 1.400+ data).\n\nSistem tetap berjalan aman menggunakan cache lokal. Silakan coba klik tombol Sinkronisasi lagi.");
+          alert("Koneksi ke Google Sheets membutuhkan waktu lebih lama dari biasanya (Timeout 90 Detik saat memproses 2.500+ data beserta foto).\n\nSistem tetap berjalan aman menggunakan cache lokal. Silakan pastikan sinyal internet stabil dan coba kembali.");
         } else {
           alert("Gagal terhubung ke database pusat Google Sheets. Pastikan layanan Google Sheets aktif dan coba kembali beberapa saat lagi.");
         }
