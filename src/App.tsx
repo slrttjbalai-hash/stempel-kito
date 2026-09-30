@@ -874,9 +874,9 @@ export default function App() {
 
   const GOOGLE_SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbx475qL3YoVQoDJQ4vtOIMIpjPforxxnXRm8R8dONc_lpE31ks0PleiQvcDJ7WVwURpog/exec";
 
-  // Helper to fetch with a specified timeout (default 25 seconds) to prevent infinite hanging while giving Google Apps Script enough time to compile 1400+ records
+  // Helper to fetch with a specified timeout (default 90 seconds) to prevent premature abort when downloading 60MB+ dataset from Google Apps Script
   const fetchWithTimeout = async (resource: string, options: RequestInit & { timeout?: number; retries?: number } = {}) => {
-    const { timeout = 25000, retries = 1, ...rest } = options;
+    const { timeout = 90000, retries = 1, ...rest } = options;
     let attempt = 0;
     while (attempt <= retries) {
       const controller = new AbortController();
@@ -2417,8 +2417,9 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     img.src = imageUrl;
     img.onload = async () => {
       // Dynamic max dimensions based on the user-controlled photoResolutionMode
+      // Capped to ensure base64 output stays under Google Sheets 50,000-char cell limit
       const isHighRes = photoResolutionMode === 'high';
-      const maxDimension = isHighRes ? 960 : 480;
+      const maxDimension = isHighRes ? 720 : 480;
       
       let width = img.width;
       let height = img.height;
@@ -2482,29 +2483,36 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
       }
 
       // Progressively compress JPG based on size limits of selected quality mode
-      const maxPayloadKb = isHighRes ? 120 : 32;
-      let quality = isHighRes ? 0.85 : 0.70;
+      // Strict 33KB binary (~44,000 chars base64) ceiling guarantees compatibility with Google Sheets 50,000-character cell limit
+      const maxPayloadKb = isHighRes ? 33 : 26;
+      const maxBase64Length = 45000;
+      let quality = isHighRes ? 0.78 : 0.68;
       let compressedUrl = canvas.toDataURL('image/jpeg', quality);
       let calculatedPayloadKb = (compressedUrl.length * 0.75) / 1024;
 
       let cycles = 0;
-      while (calculatedPayloadKb > maxPayloadKb && quality > 0.15 && cycles < 10) {
-        quality -= 0.10;
-        compressedUrl = canvas.toDataURL('image/jpeg', quality);
+      while ((calculatedPayloadKb > maxPayloadKb || compressedUrl.length > maxBase64Length) && quality > 0.15 && cycles < 10) {
+        quality -= 0.08;
+        compressedUrl = canvas.toDataURL('image/jpeg', Math.max(0.15, quality));
         calculatedPayloadKb = (compressedUrl.length * 0.75) / 1024;
         cycles++;
       }
 
-      // If still exceeding target limit scale down the resolution of image
-      if (calculatedPayloadKb > maxPayloadKb) {
+      // If still exceeding target limit scale down the resolution of image iteratively
+      let currentCanvas = canvas;
+      let shrinkAttempts = 0;
+      while ((calculatedPayloadKb > maxPayloadKb || compressedUrl.length > maxBase64Length) && shrinkAttempts < 4) {
         const shrinkCanvas = document.createElement('canvas');
-        shrinkCanvas.width = Math.round(width * 0.8);
-        shrinkCanvas.height = Math.round(height * 0.8);
+        shrinkCanvas.width = Math.max(240, Math.round(currentCanvas.width * 0.78));
+        shrinkCanvas.height = Math.max(240, Math.round(currentCanvas.height * 0.78));
         const shrinkCtx = shrinkCanvas.getContext('2d');
         if (shrinkCtx) {
-          shrinkCtx.drawImage(canvas, 0, 0, shrinkCanvas.width, shrinkCanvas.height);
-          compressedUrl = shrinkCanvas.toDataURL('image/jpeg', isHighRes ? 0.6 : 0.4);
+          shrinkCtx.drawImage(currentCanvas, 0, 0, shrinkCanvas.width, shrinkCanvas.height);
+          compressedUrl = shrinkCanvas.toDataURL('image/jpeg', isHighRes ? 0.55 : 0.45);
+          calculatedPayloadKb = (compressedUrl.length * 0.75) / 1024;
+          currentCanvas = shrinkCanvas;
         }
+        shrinkAttempts++;
       }
 
       callback(compressedUrl);
@@ -2530,33 +2538,31 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     reader.readAsDataURL(file);
   };
 
-  // Handler helper to initiate verification from facilitator perspective
+  // Handler helper to initiate verification from facilitator or admin perspective
   const handleOpenVerifierModal = (rec: SLRTRecord) => {
     setSelectedVerifierRecord(rec);
     setVerifierNotes(rec.catatanPemeriksa || rec.catatan_pendata || '');
     
-    // Auto-fill verifier's name automatically with the logged-in user's account name
-    const activeName = session?.name || 'Petugas STEMPEL KITO';
+    const isAlreadyVerified = rec.statusKunjungan === 'Sudah Dikunjungi';
+    const existingPendata = rec.namaPendata && rec.namaPendata !== 'Administrator STEMPEL KITO' ? rec.namaPendata : '';
+    const activeName = (isAlreadyVerified && existingPendata)
+      ? existingPendata
+      : (session?.name || existingPendata || rec.namaFasilitator || 'Petugas STEMPEL KITO');
     setVerifierNamaPendata(activeName);
     
-    setVerifierFotoKkKtp(rec.fotoKkKtp || rec.foto_ktp_url || '');
-    setVerifierFotoDepanRumah(rec.fotoDepanRumah || rec.foto_hunian_url || '');
+    const archivePhotos = photosArchiveCache[rec.id];
+    setVerifierFotoKkKtp(rec.fotoKkKtp || rec.foto_ktp_url || archivePhotos?.fotoKkKtp || '');
+    setVerifierFotoDepanRumah(rec.fotoDepanRumah || rec.foto_hunian_url || archivePhotos?.fotoDepanRumah || '');
     
-    // Use existing verifier photo (dokumentasiBukti) if present, otherwise set a random realistic placeholder
-    if (rec.dokumentasiBukti) {
-      setVerifierPhoto(rec.dokumentasiBukti);
+    // Use existing verifier photo (dokumentasiBukti) if present
+    const existingBukti = rec.dokumentasiBukti || rec.fotoOps || archivePhotos?.dokumentasiBukti || '';
+    if (existingBukti) {
+      setVerifierPhoto(existingBukti);
     } else {
-      const housePhotos = [
-        'https://images.unsplash.com/photo-1542831371-29b0f74f9713?auto=format&fit=crop&q=80&w=400', // poverty study
-        'https://images.unsplash.com/photo-1584824486509-112e4181ff6b?auto=format&fit=crop&q=80&w=400', // paperwork
-        'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=400', // rustic wall
-        'https://images.unsplash.com/photo-1516880711640-ef7db81be3e1?auto=format&fit=crop&q=80&w=400', // wooden structure
-      ];
-      const pickedPhoto = housePhotos[Math.floor(Math.random() * housePhotos.length)];
-      setVerifierPhoto(pickedPhoto);
+      setVerifierPhoto('');
     }
 
-    // Automatically set verification date/time to the EXACT current real-world timestamp
+    // Preserve existing verification timestamp if already verified, otherwise set current real-world timestamp
     const today = new Date();
     const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
     const months = [
@@ -2568,7 +2574,11 @@ Ibu Rosmawati mengadu karena anaknya yang umur 12 tahun tidak bisa melanjutkan s
     const secs = String(today.getSeconds()).padStart(2, '0');
     const formattedDateTime = `${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()} Pukul ${hrs}:${mins}:${secs} WIB`;
     
-    setVerifierDate(formattedDateTime);
+    if (isAlreadyVerified && rec.tanggalPemeriksaan && rec.tanggalPemeriksaan !== '-') {
+      setVerifierDate(rec.tanggalPemeriksaan);
+    } else {
+      setVerifierDate(formattedDateTime);
+    }
     setVerifierLat(rec.latitude || null);
     setVerifierLng(rec.longitude || null);
     setShowVerifierModal(true);

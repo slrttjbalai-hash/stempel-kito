@@ -805,7 +805,7 @@ function deleteRecord(id) {
   return { status: "error", message: "Laporan ID " + id + " tidak ditemukan" };
 }
 
-// Helper untuk mengunggah dan menyimpan foto base64 ke folder Google Drive & mengembalikan link gambar
+// Helper untuk mengunggah dan menyimpan foto base64 ke folder Google Drive & fallback otomatis ke sel Sheet jika Drive belum diotorisasi
 function saveBase64ToDrive(base64Data, filenamePrefix, clientId) {
   if (!base64Data || typeof base64Data !== 'string') return "";
   var trimmed = base64Data.trim();
@@ -840,8 +840,9 @@ function saveBase64ToDrive(base64Data, filenamePrefix, clientId) {
     
     return "https://lh3.googleusercontent.com/d/" + file.getId();
   } catch (err) {
-    Logger.log("Error saveBase64ToDrive: " + err);
-    return "";
+    Logger.log("Fallback ke penyimpanan sel Spreadsheet karena DriveApp belum diotorisasi: " + err);
+    // PENTING: Jangan kembalikan string kosong! Simpan langsung kode base64 terkompresi (< 49.500 karakter) ke sel Spreadsheet
+    return trimmed.length <= 49500 ? trimmed : "";
   }
 }
 
@@ -870,19 +871,28 @@ function syncRecord(data) {
   // 1. Cari & Simpan pada Lembar Target
   const lastRowTarget = targetSheet.getLastRow();
   let foundRowTarget = -1;
+  let existingRowData = null;
   if (lastRowTarget > 1) {
     const valuesTarget = targetSheet.getRange(2, 1, lastRowTarget - 1, 1).getValues();
     for (let i = 0; i < valuesTarget.length; i++) {
       if (String(valuesTarget[i][0]).trim() === String(targetId).trim()) {
         foundRowTarget = i + 2;
+        existingRowData = targetSheet.getRange(foundRowTarget, 1, 1, 26).getValues()[0];
         break;
       }
     }
   }
   
-  const fotoKk = saveBase64ToDrive(data.fotoKkKtp || data.foto_ktp_url || "", "KK_KTP", targetId);
-  const fotoHunian = saveBase64ToDrive(data.fotoDepanRumah || data.foto_hunian_url || "", "RUMAH", targetId);
-  const fotoBukti = saveBase64ToDrive(data.dokumentasiBukti || data.fotoOps || "", "KONTROL", targetId);
+  let fotoKk = saveBase64ToDrive(data.fotoKkKtp || data.foto_ktp_url || "", "KK_KTP", targetId);
+  let fotoHunian = saveBase64ToDrive(data.fotoDepanRumah || data.foto_hunian_url || "", "RUMAH", targetId);
+  let fotoBukti = saveBase64ToDrive(data.dokumentasiBukti || data.fotoOps || "", "KONTROL", targetId);
+  
+  // Pertahankan foto yang sudah tersimpan di Sheet apabila kiriman baru tidak menyertakan foto
+  if (existingRowData) {
+    if (!fotoKk && existingRowData[23]) fotoKk = String(existingRowData[23]);
+    if (!fotoHunian && existingRowData[24]) fotoHunian = String(existingRowData[24]);
+    if (!fotoBukti && existingRowData[25]) fotoBukti = String(existingRowData[25]);
+  }
   const catatan = data.catatanPemeriksa || data.catatan_pendata || "-";
   
   const rowData = [
